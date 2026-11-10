@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contador de piezas</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  header { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; background: #1b1b1b; }
+  #total { font-size: 28px; font-weight: 700; color: #4ade80; }
+  #stage { position: relative; width: 100%; max-width: 900px; margin: 0 auto; }
+  video, canvas { width: 100%; display: block; }
+  #overlay { position: absolute; left: 0; top: 0; height: 100%; }
+  .controls { padding: 10px 14px; display: grid; gap: 10px; max-width: 900px; margin: 0 auto; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button, select, input[type=text] { padding: 12px 16px; font-size: 16px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; }
+  input[type=text] { background: #1f2937; flex: 1; min-width: 140px; }
+  button.sec { background: #374151; }
+  button.ok { background: #16a34a; }
+  label { display: flex; flex-direction: column; font-size: 14px; gap: 4px; flex: 1; min-width: 140px; }
+  input[type=range] { width: 100%; }
+  #msg { font-size: 14px; color: #fbbf24; min-height: 20px; }
+  h2 { font-size: 16px; margin: 6px 0 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #333; }
+  td button { padding: 6px 10px; font-size: 13px; background: #7f1d1d; }
+  #dlg { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: center; justify-content: center; padding: 16px; }
+  #dlg .box { background: #1f2937; padding: 18px; border-radius: 12px; max-width: 420px; width: 100%; display: grid; gap: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div>Piezas: <span id="total">0</span></div>
+  <select id="camSel"></select>
+</header>
+<div id="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+</div>
+<div class="controls">
+  <div class="row">
+    <button id="btnCal" class="sec">Calibrar</button>
+    <button id="btnCount">Contar</button>
+    <button id="btnFreeze" class="sec">Congelar</button>
+    <button id="btnLive" class="sec">Modo continuo: no</button>
+  </div>
+  <div class="row">
+    <label>Sensibilidad
+      <input type="range" id="sens" min="5" max="80" value="30">
+    </label>
+    <label>Tamaño mínimo (px)
+      <input type="range" id="minArea" min="10" max="2000" value="60">
+    </label>
+  </div>
+  <div id="msg"></div>
+
+  <h2>Guardar conteo por lote</h2>
+  <div class="row">
+    <input type="text" id="lote" placeholder="Número de lote" autocomplete="off">
+    <button id="btnSave" class="ok">Guardar</button>
+  </div>
+
+  <h2>Historial</h2>
+  <div class="row">
+    <button id="btnExport" class="sec">Exportar a planilla (CSV)</button>
+    <button id="btnClear" class="sec">Borrar todo</button>
+  </div>
+  <table>
+    <thead><tr><th>Lote</th><th>Cantidad</th><th>Fecha y hora</th><th></th></tr></thead>
+    <tbody id="hist"></tbody>
+  </table>
+</div>
+
+<div id="dlg">
+  <div class="box">
+    <div id="dlgText"></div>
+    <button id="dlgSum">Sumar al registro anterior</button>
+    <button id="dlgNew" class="sec">Guardar como registro nuevo</button>
+    <button id="dlgCancel" class="sec">Cancelar</button>
+  </div>
+</div>
+<canvas id="work" style="display:none"></canvas>
+
+<script>
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const work = document.getElementById('work');
+const octx = overlay.getContext('2d');
+const wctx = work.getContext('2d', { willReadFrequently: true });
+const totalEl = document.getElementById('total');
+const msg = document.getElementById('msg');
+const camSel = document.getElementById('camSel');
+
+let stream = null, frozen = false, calibrating = false, live = false;
+let refArea = null;
+let currentTotal = 0;
+const WORK_W = 640;
+
+/* ---------- Cámara ---------- */
+async function listCams() {
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  const cams = devs.filter(d => d.kind === 'videoinput');
+  camSel.innerHTML = '';
+  cams.forEach((c, i) => {
+    const o = document.createElement('option');
+    o.value = c.deviceId;
+    o.textContent = c.label || ('Cámara ' + (i + 1));
+    camSel.appendChild(o);
+  });
+}
+
+async function startCam(deviceId) {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  const constraints = { video: deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } };
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+    await video.play();
+    await listCams();
+  } catch (e) {
+    msg.textContent = 'No pude abrir la cámara: ' + e.message;
+  }
+}
+camSel.onchange = () => startCam(camSel.value);
+
+function sizeOverlay() {
+  overlay.width = video.videoWidth;
+  overlay.height = video.videoHeight;
+  overlay.style.width = video.clientWidth + 'px';
+  overlay.style.height = video.clientHeight + 'px';
+}
+video.addEventListener('loadedmetadata', sizeOverlay);
+window.addEventListener('resize', sizeOverlay);
+
+/* ---------- Detección ---------- */
+function grab() {
+  const scale = WORK_W / video.videoWidth;
+  work.width = WORK_W;
+  work.height = Math.round(video.videoHeight * scale);
+  wctx.drawImage(video, 0, 0, work.width, work.height);
+  return { img: wctx.getImageData(0, 0, work.width, work.height), scale };
+}
+
+function segment(img, thr) {
+  const { width: w, height: h, data } = img;
+  const samples = [];
+  function idx(x, y) { return (y * w + x) * 4; }
+  for (let x = 0; x < w; x += 8) { samples.push(idx(x, 2), idx(x, h - 3)); }
+  for (let y = 0; y < h; y += 8) { samples.push(idx(2, y), idx(w - 3, y)); }
+  const med = c => { const a = samples.map(i => data[i + c]).sort((p, q) => p - q); return a[a.length >> 1]; };
+  const bg = [med(0), med(1), med(2)];
+  const mask = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const d = Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]);
+    mask[p] = d > thr * 3 ? 1 : 0;
+  }
+  return { mask, w, h };
+}
+
+function components(mask, w, h, minArea) {
+  const seen = new Uint8Array(w * h);
+  const out = [];
+  const stack = [];
+  for (let s = 0; s < w * h; s++) {
+    if (!mask[s] || seen[s]) continue;
+    let area = 0, sx = 0, sy = 0, minX = w, minY = h, maxX = 0, maxY = 0;
+    stack.push(s); seen[s] = 1;
+    while (stack.length) {
+      const p = stack.pop();
+      const x = p % w, y = (p / w) | 0;
+      area++; sx += x; sy += y;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
+      if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
+      if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = 1; stack.push(p - w); }
+      if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = 1; stack.push(p + w); }
+    }
+    if (area >= minArea) out.push({ area, cx: sx / area, cy: sy / area, minX, minY, maxX, maxY });
+  }
+  return out;
+}
+
+function analyze() {
+  const thr = +document.getElementById('sens').value;
+  const minArea = +document.getElementById('minArea').value;
+  const { img, scale } = grab();
+  const { mask, w, h } = segment(img, thr);
+  const comps = components(mask, w, h, minArea);
+  return { comps, scale, w, h };
+}
+
+function draw(result) {
+  const { comps, scale } = result;
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  const k = 1 / scale;
+  let total = 0, suspicious = 0;
+  octx.lineWidth = 2; octx.font = (14 * k) + 'px sans-serif'; octx.textAlign = 'center';
+  comps.forEach(c => {
+    let n = 1, color = '#4ade80';
+    if (refArea) {
+      const ratio = c.area / refArea;
+      if (ratio > 1.6) { n = Math.round(ratio); color = '#fb923c'; suspicious++; }
+      else if (ratio < 0.4) { color = '#f87171'; }
+    }
+    total += n;
+    octx.strokeStyle = color; octx.fillStyle = color;
+    octx.strokeRect(c.minX * k, c.minY * k, (c.maxX - c.minX) * k, (c.maxY - c.minY) * k);
+    octx.fillText(n > 1 ? ('~' + n) : String(total), c.cx * k, (c.minY * k) - 4);
+  });
+  currentTotal = total;
+  totalEl.textContent = total;
+  msg.textContent = suspicious
+    ? 'Atención: ' + suspicious + ' grupo(s) en naranja son piezas pegadas, el número es estimado. Separalas y volvé a contar.'
+    : (refArea ? '' : 'Sin calibrar: cada mancha cuenta como 1 pieza. Calibrá con una pieza para detectar piezas pegadas.');
+}
+
+function countNow() {
+  if (!video.videoWidth) return;
+  draw(analyze());
+}
+
+overlay.addEventListener('click', e => {
+  if (!calibrating) return;
+  const r = overlay.getBoundingClientRect();
+  const fx = (e.clientX - r.left) / r.width;
+  const fy = (e.clientY - r.top) / r.height;
+  const res = analyze();
+  const px = fx * res.w, py = fy * res.h;
+  const hit = res.comps.find(c => px >= c.minX && px <= c.maxX && py >= c.minY && py <= c.maxY);
+  if (hit) {
+    refArea = hit.area;
+    msg.textContent = 'Calibrado. Área de una pieza: ' + refArea + ' px.';
+  } else {
+    msg.textContent = 'No encontré una pieza ahí. Probá tocar justo sobre ella o bajá la sensibilidad.';
+  }
+  calibrating = false;
+  document.getElementById('btnCal').textContent = 'Calibrar';
+  countNow();
+});
+
+document.getElementById('btnCal').onclick = () => {
+  calibrating = !calibrating;
+  document.getElementById('btnCal').textContent = calibrating ? 'Tocá una pieza...' : 'Calibrar';
+};
+document.getElementById('btnCount').onclick = countNow;
+document.getElementById('btnFreeze').onclick = e => {
+  frozen = !frozen;
+  if (frozen) { video.pause(); } else { video.play(); }
+  e.target.textContent = frozen ? 'Descongelar' : 'Congelar';
+};
+document.getElementById('btnLive').onclick = e => {
+  live = !live;
+  e.target.textContent = 'Modo continuo: ' + (live ? 'sí' : 'no');
+};
+setInterval(() => { if (live && !frozen) countNow(); }, 700);
+['sens', 'minArea'].forEach(id => document.getElementById(id).addEventListener('change', countNow));
+
+/* ---------- Historial por lote ---------- */
+const STORE_KEY = 'contadorPiezasHistorial';
+let registros = [];
+try { registros = JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch (e) { registros = []; }
+
+function persist() { localStorage.setItem(STORE_KEY, JSON.stringify(registros)); }
+
+function fmt(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderHist() {
+  const tb = document.getElementById('hist');
+  tb.innerHTML = '';
+  registros.slice().reverse().forEach(r => {
+    const tr = document.createElement('tr');
+    const tdL = document.createElement('td'); tdL.textContent = r.lote;
+    const tdC = document.createElement('td'); tdC.textContent = r.cantidad;
+    const tdF = document.createElement('td'); tdF.textContent = fmt(r.fecha);
+    const tdB = document.createElement('td');
+    const b = document.createElement('button'); b.textContent = 'Borrar';
+    b.onclick = () => {
+      if (confirm('¿Borrar el registro del lote ' + r.lote + '?')) {
+        registros = registros.filter(x => x.id !== r.id);
+        persist(); renderHist();
+      }
+    };
+    tdB.appendChild(b);
+    tr.append(tdL, tdC, tdF, tdB);
+    tb.appendChild(tr);
+  });
+}
+
+function addRecord(lote, cantidad) {
+  registros.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), lote, cantidad, fecha: new Date().toISOString() });
+  persist(); renderHist();
+  msg.textContent = 'Guardado: lote ' + lote + ', ' + cantidad + ' piezas.';
+}
+
+function sumToLast(lote, cantidad) {
+  for (let i = registros.length - 1; i >= 0; i--) {
+    if (registros[i].lote.toLowerCase() === lote.toLowerCase()) {
+      registros[i].cantidad += cantidad;
+      registros[i].fecha = new Date().toISOString();
+      persist(); renderHist();
+      msg.textContent = 'Sumado al lote ' + lote + ': ahora ' + registros[i].cantidad + ' piezas.';
+      return;
+    }
+  }
+}
+
+const dlg = document.getElementById('dlg');
+function askDuplicate(lote, cantidad, previa) {
+  document.getElementById('dlgText').textContent =
+    'El lote ' + lote + ' ya tiene un registro de ' + previa + ' piezas. Ahora contás ' + cantidad + '. ¿Qué querés hacer?';
+  dlg.style.display = 'flex';
+  document.getElementById('dlgSum').onclick = () => { dlg.style.display = 'none'; sumToLast(lote, cantidad); };
+  document.getElementById('dlgNew').onclick = () => { dlg.style.display = 'none'; addRecord(lote, cantidad); };
+  document.getElementById('dlgCancel').onclick = () => { dlg.style.display = 'none'; };
+}
+
+document.getElementById('btnSave').onclick = () => {
+  const lote = document.getElementById('lote').value.trim();
+  if (!lote) { msg.textContent = 'Escribí el número de lote antes de guardar.'; return; }
+  if (!currentTotal) { msg.textContent = 'Todavía no hay un conteo. Tocá Contar primero.'; return; }
+  const previo = registros.slice().reverse().find(r => r.lote.toLowerCase() === lote.toLowerCase());
+  if (previo) askDuplicate(lote, currentTotal, previo.cantidad);
+  else addRecord(lote, currentTotal);
+};
+
+document.getElementById('btnExport').onclick = () => {
+  if (!registros.length) { msg.textContent = 'No hay registros para exportar.'; return; }
+  const esc = s => '"' + String(s).replace(/"/g, '""') + '"';
+  const lines = ['Lote;Cantidad;Fecha y hora'];
+  registros.forEach(r => lines.push([esc(r.lote), r.cantidad, esc(fmt(r.fecha))].join(';')));
+  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'conteo-por-lote.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+document.getElementById('btnClear').onclick = () => {
+  if (confirm('¿Borrar TODO el historial? Esto no se puede deshacer.')) {
+    registros = []; persist(); renderHist();
+  }
+};
+
+renderHist();
+startCam();
+</script>
+</body>
+</html>
