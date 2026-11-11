@@ -2,74 +2,174 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Contador de piezas</title>
 <style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --txt:#e8eaed; --mut:#9aa3b2; --acc:#2563eb; --ok:#16a34a; --warn:#fbbf24; }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee; }
-  header { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; background: #1b1b1b; }
-  #total { font-size: 28px; font-weight: 700; color: #4ade80; }
-  #stage { position: relative; width: 100%; max-width: 900px; margin: 0 auto; }
-  video, canvas { width: 100%; display: block; }
-  #overlay { position: absolute; left: 0; top: 0; height: 100%; }
-  .controls { padding: 10px 14px; display: grid; gap: 10px; max-width: 900px; margin: 0 auto; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  button, select, input[type=text] { padding: 12px 16px; font-size: 16px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; }
-  input[type=text] { background: #1f2937; flex: 1; min-width: 140px; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: system-ui, sans-serif; background: var(--bg); color: var(--txt);
+    display: grid; height: 100vh; height: 100dvh; overflow: hidden;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "top" "stage" "bar" "panel";
+  }
+  header { grid-area: top; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header .tot { display: flex; align-items: baseline; gap: 6px; margin-right: auto; }
+  #total { font-size: 30px; font-weight: 800; color: #4ade80; line-height: 1; }
+  #stage { grid-area: stage; position: relative; display: flex; align-items: center; justify-content: center; background: #000; min-height: 120px; overflow: hidden; }
+  #frame { position: relative; }
+  #frame video, #frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #frame video { object-fit: fill; }
+  #overlay { touch-action: none; }
+  .bar { grid-area: bar; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 10px 4px; background: var(--panel); }
+  #msg { grid-column: 1 / -1; font-size: 13px; color: var(--warn); min-height: 18px; }
+  #panel { grid-area: panel; max-height: 36vh; max-height: 36dvh; overflow-y: auto; padding: 4px 10px 16px; background: var(--panel); -webkit-overflow-scrolling: touch; }
+  @media (orientation: landscape) and (min-width: 700px) {
+    body { grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "stage top" "stage bar" "stage panel"; }
+    #panel { max-height: none; }
+  }
+  button, select, input[type=text] { font: inherit; font-size: 15px; padding: 10px 12px; border: 0; border-radius: 8px; background: var(--acc); color: #fff; }
+  select { background: #263041; max-width: 46vw; }
   button.sec { background: #374151; }
-  button.ok { background: #16a34a; }
-  label { display: flex; flex-direction: column; font-size: 14px; gap: 4px; flex: 1; min-width: 140px; }
+  button.ok { background: var(--ok); }
+  button.on { background: #b45309; }
+  button.sm { padding: 7px 10px; font-size: 13px; }
+  input[type=text] { background: #0f141c; border: 1px solid var(--line); flex: 1; min-width: 120px; }
+  details { border-top: 1px solid var(--line); padding: 6px 0; }
+  summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  .field { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--mut); flex: 1; min-width: 140px; }
+  .field b { color: var(--txt); font-weight: 600; }
+  .chk { display: flex; gap: 8px; align-items: center; font-size: 14px; min-width: 45%; }
   input[type=range] { width: 100%; }
-  #msg { font-size: 14px; color: #fbbf24; min-height: 20px; }
-  h2 { font-size: 16px; margin: 6px 0 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #333; }
-  td button { padding: 6px 10px; font-size: 13px; background: #7f1d1d; }
-  #dlg { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: center; justify-content: center; padding: 16px; }
+  .hint { font-size: 12px; color: var(--mut); margin: 2px 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  td button { padding: 5px 8px; font-size: 12px; background: #7f1d1d; }
+  #dlg { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
   #dlg .box { background: #1f2937; padding: 18px; border-radius: 12px; max-width: 420px; width: 100%; display: grid; gap: 12px; }
+  ul { margin: 4px 0; padding-left: 18px; font-size: 13px; color: var(--mut); }
 </style>
 </head>
 <body>
 <header>
-  <div>Piezas: <span id="total">0</span></div>
-  <select id="camSel"></select>
+  <div class="tot"><span>Piezas</span><span id="total">0</span></div>
+  <button id="btnTorch" class="sec sm" hidden>Linterna</button>
+  <select id="camSel" aria-label="Cámara"></select>
 </header>
+
 <div id="stage">
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="overlay"></canvas>
+  <div id="frame">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+  </div>
 </div>
-<div class="controls">
-  <div class="row">
-    <button id="btnCal" class="sec">Calibrar</button>
-    <button id="btnCount">Contar</button>
-    <button id="btnFreeze" class="sec">Congelar</button>
-    <button id="btnLive" class="sec">Modo continuo: no</button>
-  </div>
-  <div class="row">
-    <label>Sensibilidad
-      <input type="range" id="sens" min="5" max="80" value="30">
-    </label>
-    <label>Tamaño mínimo (px)
-      <input type="range" id="minArea" min="10" max="2000" value="60">
-    </label>
-  </div>
+
+<div class="bar">
+  <button id="btnCount">Contar</button>
+  <button id="btnFreeze" class="sec">Congelar</button>
+  <button id="btnCal" class="sec">Calibrar</button>
+  <button id="btnLive" class="sec">Continuo</button>
   <div id="msg"></div>
+</div>
 
-  <h2>Guardar conteo por lote</h2>
-  <div class="row">
-    <input type="text" id="lote" placeholder="Número de lote" autocomplete="off">
-    <button id="btnSave" class="ok">Guardar</button>
-  </div>
+<div id="panel">
+  <details open>
+    <summary>Guardar por lote</summary>
+    <div class="row">
+      <input type="text" id="lote" placeholder="Número de lote" autocomplete="off">
+      <button id="btnSave" class="ok">Guardar</button>
+    </div>
+  </details>
 
-  <h2>Historial</h2>
-  <div class="row">
-    <button id="btnExport" class="sec">Exportar a planilla (CSV)</button>
-    <button id="btnClear" class="sec">Borrar todo</button>
-  </div>
-  <table>
-    <thead><tr><th>Lote</th><th>Cantidad</th><th>Fecha y hora</th><th></th></tr></thead>
-    <tbody id="hist"></tbody>
-  </table>
+  <details open>
+    <summary>Ajustes de detección</summary>
+    <div class="row">
+      <label class="field">Sensibilidad: <b id="vSens"></b>
+        <input type="range" id="sens" min="0" max="100" step="1">
+      </label>
+      <label class="field">Tamaño mínimo: <b id="vMin"></b>
+        <input type="range" id="minArea" min="2" max="1500" step="1">
+      </label>
+    </div>
+    <div class="row">
+      <label class="field">Limpieza de ruido: <b id="vClean"></b>
+        <input type="range" id="clean" min="0" max="3" step="1">
+      </label>
+      <label class="field">Resolución de análisis
+        <select id="res">
+          <option value="480">Baja (más rápida)</option>
+          <option value="640">Media</option>
+          <option value="960">Alta (piezas chicas)</option>
+          <option value="1280">Muy alta</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <label class="field">Piezas pegadas
+        <select id="split">
+          <option value="area">Estimar por área (cualquier forma)</option>
+          <option value="forma">Separar por forma (redondas o compactas)</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="auto"> Umbral automático</label>
+      <label class="chk"><input type="checkbox" id="blur"> Suavizar imagen</label>
+      <label class="chk"><input type="checkbox" id="fill"> Rellenar brillos</label>
+      <label class="chk"><input type="checkbox" id="ignoreSmall"> Ignorar manchas chicas</label>
+      <label class="chk"><input type="checkbox" id="showMask"> Ver máscara</label>
+    </div>
+    <div class="row">
+      <button id="btnCalReset" class="sec sm">Reiniciar calibración</button>
+      <button id="btnDefaults" class="sec sm">Ajustes de fábrica</button>
+    </div>
+    <div class="hint" id="calInfo"></div>
+  </details>
+
+  <details>
+    <summary>Zona de conteo y fondo</summary>
+    <div class="row">
+      <button id="btnRoi" class="sec sm">Marcar zona</button>
+      <button id="btnRoiClear" class="sec sm">Quitar zona</button>
+    </div>
+    <div class="hint">Arrastrá un rectángulo sobre la imagen. Solo se cuenta lo que queda adentro (sirve para dejar afuera bordes de la mesa, cajas o sombras).</div>
+    <div class="row">
+      <label class="field">Fondo
+        <select id="bgMode">
+          <option value="auto">Automático (color de los bordes)</option>
+          <option value="capt">Foto del fondo vacío</option>
+        </select>
+      </label>
+      <button id="btnBg" class="sec sm">Capturar fondo vacío</button>
+    </div>
+    <div class="hint">Con la cámara quieta, sacá las piezas, tocá "Capturar fondo vacío" y volvé a ponerlas. Es el modo más preciso con fondos con manchas o luz despareja.</div>
+  </details>
+
+  <details>
+    <summary>Historial</summary>
+    <div class="row">
+      <button id="btnExport" class="sec sm">Exportar a planilla (CSV)</button>
+      <button id="btnClear" class="sec sm">Borrar todo</button>
+    </div>
+    <table>
+      <thead><tr><th>Lote</th><th>Cantidad</th><th>Fecha y hora</th><th></th></tr></thead>
+      <tbody id="hist"></tbody>
+    </table>
+  </details>
+
+  <details>
+    <summary>Consejos para contar mejor</summary>
+    <ul>
+      <li>Fondo liso y de color opuesto a las piezas (piezas claras sobre fondo oscuro, o al revés).</li>
+      <li>Luz difusa desde arriba; evitá sombras duras y reflejos directos.</li>
+      <li>Cámara quieta y paralela a la mesa. Calibrá tocando 3 piezas sueltas distintas.</li>
+      <li>Activá "Ver máscara": lo azul es lo que la app considera pieza. Ajustá la sensibilidad hasta que cada pieza sea una mancha limpia.</li>
+      <li>Verde: pieza contada. Naranja: grupo de piezas pegadas (número estimado). Rojo: mancha chica, revisar. Gris punteado: ignorada.</li>
+    </ul>
+  </details>
 </div>
 
 <div id="dlg">
@@ -80,199 +180,474 @@
     <button id="dlgCancel" class="sec">Cancelar</button>
   </div>
 </div>
-<canvas id="work" style="display:none"></canvas>
 
 <script>
-const video = document.getElementById('video');
-const overlay = document.getElementById('overlay');
-const work = document.getElementById('work');
+const $ = id => document.getElementById(id);
+const video = $('video'), overlay = $('overlay'), frame = $('frame'), stage = $('stage');
 const octx = overlay.getContext('2d');
+const work = document.createElement('canvas');
 const wctx = work.getContext('2d', { willReadFrequently: true });
-const totalEl = document.getElementById('total');
-const msg = document.getElementById('msg');
-const camSel = document.getElementById('camSel');
+const maskCv = document.createElement('canvas');
+const mctx = maskCv.getContext('2d');
+const msg = $('msg'), totalEl = $('total'), camSel = $('camSel');
 
-let stream = null, frozen = false, calibrating = false, live = false;
-let refArea = null;
-let currentTotal = 0;
-const WORK_W = 640;
+/* ---------- Ajustes (se recuerdan en el dispositivo) ---------- */
+const SET_KEY = 'contadorPiezasAjustes';
+const DEF = { sens: 70, minArea: 40, clean: 1, res: 640, split: 'area', auto: true, blur: true, fill: true,
+  ignoreSmall: true, showMask: false, bgMode: 'auto', roi: null, refSamples: [] };
+let S = JSON.parse(JSON.stringify(DEF));
+try { Object.assign(S, JSON.parse(localStorage.getItem(SET_KEY)) || {}); } catch (e) {}
+function saveS() { try { localStorage.setItem(SET_KEY, JSON.stringify(S)); } catch (e) {} }
+function refFrac() {
+  if (!S.refSamples || !S.refSamples.length) return null;
+  const a = S.refSamples.slice().sort((x, y) => x - y);
+  return a[a.length >> 1];
+}
+
+const BINDS = { sens: 'num', minArea: 'num', clean: 'num', res: 'num', split: 'str', bgMode: 'str',
+  auto: 'chk', blur: 'chk', fill: 'chk', ignoreSmall: 'chk', showMask: 'chk' };
+function syncUI() {
+  for (const k in BINDS) { const el = $(k); if (BINDS[k] === 'chk') el.checked = !!S[k]; else el.value = S[k]; }
+  showVals();
+}
+function showVals() {
+  $('vSens').textContent = S.sens + (lastRes ? ' (umbral ' + lastRes.thr + ')' : '');
+  $('vMin').textContent = S.minArea + ' px';
+  $('vClean').textContent = ['no', 'baja', 'media', 'alta'][S.clean];
+  const n = (S.refSamples || []).length;
+  $('calInfo').textContent = n
+    ? 'Calibrada con ' + n + ' muestra(s). ' + (n < 3 ? 'Recomendado: tocá Calibrar y sumá hasta 3 piezas.' : '')
+    : 'Sin calibrar: cada mancha cuenta como 1 pieza y no se detectan piezas pegadas.';
+}
+for (const k in BINDS) {
+  $(k).addEventListener(BINDS[k] === 'chk' ? 'change' : 'input', e => {
+    const el = e.target;
+    S[k] = BINDS[k] === 'chk' ? el.checked : BINDS[k] === 'num' ? +el.value : el.value;
+    if (k === 'bgMode' && S.bgMode === 'capt' && !bgFrame) msg.textContent = 'Todavía no capturaste el fondo vacío. Tocá "Capturar fondo vacío".';
+    saveS(); showVals(); scheduleCount();
+  });
+}
 
 /* ---------- Cámara ---------- */
+let stream = null, track = null, torchOn = false;
 async function listCams() {
   const devs = await navigator.mediaDevices.enumerateDevices();
   const cams = devs.filter(d => d.kind === 'videoinput');
   camSel.innerHTML = '';
   cams.forEach((c, i) => {
     const o = document.createElement('option');
-    o.value = c.deviceId;
-    o.textContent = c.label || ('Cámara ' + (i + 1));
+    o.value = c.deviceId; o.textContent = c.label || ('Cámara ' + (i + 1));
     camSel.appendChild(o);
   });
+  const cur = track && track.getSettings ? track.getSettings().deviceId : null;
+  if (cur) camSel.value = cur;
 }
-
 async function startCam(deviceId) {
   if (stream) stream.getTracks().forEach(t => t.stop());
-  const constraints = { video: deviceId
-    ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-    : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } };
+  const base = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  const constraints = { audio: false, video: deviceId
+    ? Object.assign({ deviceId: { exact: deviceId } }, base)
+    : Object.assign({ facingMode: { ideal: 'environment' } }, base) };
   try {
     stream = await navigator.mediaDevices.getUserMedia(constraints);
+    track = stream.getVideoTracks()[0];
     video.srcObject = stream;
     await video.play();
+    bgFrame = null;
     await listCams();
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    $('btnTorch').hidden = !caps.torch;
+    torchOn = false; $('btnTorch').classList.remove('on');
   } catch (e) {
-    msg.textContent = 'No pude abrir la cámara: ' + e.message;
+    msg.textContent = 'No pude abrir la cámara: ' + e.message + '. Abrí la página con HTTPS y dale permiso a la cámara.';
   }
 }
 camSel.onchange = () => startCam(camSel.value);
+$('btnTorch').onclick = async () => {
+  try {
+    torchOn = !torchOn;
+    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+    $('btnTorch').classList.toggle('on', torchOn);
+  } catch (e) { torchOn = false; msg.textContent = 'Esta cámara no permite encender la linterna.'; }
+};
 
-function sizeOverlay() {
-  overlay.width = video.videoWidth;
-  overlay.height = video.videoHeight;
-  overlay.style.width = video.clientWidth + 'px';
-  overlay.style.height = video.clientHeight + 'px';
+/* ---------- Encaje del video en el espacio disponible ---------- */
+function fitFrame() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) return;
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const s = Math.min(W / vw, H / vh);
+  const fw = Math.max(1, Math.floor(vw * s)), fh = Math.max(1, Math.floor(vh * s));
+  frame.style.width = fw + 'px'; frame.style.height = fh + 'px';
+  const dpr = window.devicePixelRatio || 1;
+  overlay.width = Math.round(fw * dpr); overlay.height = Math.round(fh * dpr);
+  draw();
 }
-video.addEventListener('loadedmetadata', sizeOverlay);
-window.addEventListener('resize', sizeOverlay);
+video.addEventListener('loadedmetadata', fitFrame);
+video.addEventListener('resize', fitFrame);
+if (window.ResizeObserver) new ResizeObserver(fitFrame).observe(stage);
+window.addEventListener('resize', fitFrame);
 
-/* ---------- Detección ---------- */
-function grab() {
-  const scale = WORK_W / video.videoWidth;
-  work.width = WORK_W;
-  work.height = Math.round(video.videoHeight * scale);
-  wctx.drawImage(video, 0, 0, work.width, work.height);
-  return { img: wctx.getImageData(0, 0, work.width, work.height), scale };
+/* ---------- Procesamiento de imagen ---------- */
+let bgFrame = null;   // { w, h, rgb } foto del fondo vacío
+let lastRes = null;
+
+function toRGB(d, w, h) {
+  const out = new Uint8ClampedArray(w * h * 3);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) { out[p * 3] = d[i]; out[p * 3 + 1] = d[i + 1]; out[p * 3 + 2] = d[i + 2]; }
+  return out;
 }
-
-function segment(img, thr) {
-  const { width: w, height: h, data } = img;
-  const samples = [];
-  function idx(x, y) { return (y * w + x) * 4; }
-  for (let x = 0; x < w; x += 8) { samples.push(idx(x, 2), idx(x, h - 3)); }
-  for (let y = 0; y < h; y += 8) { samples.push(idx(2, y), idx(w - 3, y)); }
-  const med = c => { const a = samples.map(i => data[i + c]).sort((p, q) => p - q); return a[a.length >> 1]; };
-  const bg = [med(0), med(1), med(2)];
-  const mask = new Uint8Array(w * h);
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const d = Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]);
-    mask[p] = d > thr * 3 ? 1 : 0;
+function blurRGB(d, w, h) { // desenfoque 3x3 separable
+  const tmp = new Float32Array(w * h * 3), out = new Uint8ClampedArray(w * h * 3);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const a = (y * w + (x > 0 ? x - 1 : x)) * 4, b = (y * w + x) * 4, c = (y * w + (x < w - 1 ? x + 1 : x)) * 4, o = (y * w + x) * 3;
+    tmp[o] = (d[a] + d[b] + d[c]) / 3; tmp[o + 1] = (d[a + 1] + d[b + 1] + d[c + 1]) / 3; tmp[o + 2] = (d[a + 2] + d[b + 2] + d[c + 2]) / 3;
   }
-  return { mask, w, h };
-}
-
-function components(mask, w, h, minArea) {
-  const seen = new Uint8Array(w * h);
-  const out = [];
-  const stack = [];
-  for (let s = 0; s < w * h; s++) {
-    if (!mask[s] || seen[s]) continue;
-    let area = 0, sx = 0, sy = 0, minX = w, minY = h, maxX = 0, maxY = 0;
-    stack.push(s); seen[s] = 1;
-    while (stack.length) {
-      const p = stack.pop();
-      const x = p % w, y = (p / w) | 0;
-      area++; sx += x; sy += y;
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (y < minY) minY = y; if (y > maxY) maxY = y;
-      if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
-      if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
-      if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = 1; stack.push(p - w); }
-      if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = 1; stack.push(p + w); }
+  for (let y = 0; y < h; y++) {
+    const y0 = y > 0 ? y - 1 : y, y1 = y < h - 1 ? y + 1 : y;
+    for (let x = 0; x < w; x++) {
+      const a = (y0 * w + x) * 3, b = (y * w + x) * 3, c = (y1 * w + x) * 3;
+      out[b] = (tmp[a] + tmp[b] + tmp[c]) / 3; out[b + 1] = (tmp[a + 1] + tmp[b + 1] + tmp[c + 1]) / 3; out[b + 2] = (tmp[a + 2] + tmp[b + 2] + tmp[c + 2]) / 3;
     }
-    if (area >= minArea) out.push({ area, cx: sx / area, cy: sy / area, minX, minY, maxX, maxY });
   }
   return out;
 }
+function grabRGB() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const w = Math.min(S.res, vw), h = Math.round(vh * w / vw);
+  if (work.width !== w || work.height !== h) { work.width = w; work.height = h; }
+  wctx.drawImage(video, 0, 0, w, h);
+  const d = wctx.getImageData(0, 0, w, h).data;
+  return { rgb: S.blur ? blurRGB(d, w, h) : toRGB(d, w, h), w, h };
+}
+function roiPx(w, h) {
+  const r = S.roi;
+  if (!r) return { x0: 0, y0: 0, x1: w, y1: h };
+  return { x0: Math.max(0, Math.floor(r.x0 * w)), y0: Math.max(0, Math.floor(r.y0 * h)),
+           x1: Math.min(w, Math.ceil(r.x1 * w)), y1: Math.min(h, Math.ceil(r.y1 * h)) };
+}
+function diffMap(rgb, w, h, roi) {
+  const D = new Uint8Array(w * h);
+  if (S.bgMode === 'capt' && bgFrame && bgFrame.w === w && bgFrame.h === h) {
+    const b = bgFrame.rgb;
+    for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) {
+      const p = y * w + x, i = p * 3;
+      D[p] = (Math.abs(rgb[i] - b[i]) + Math.abs(rgb[i + 1] - b[i + 1]) + Math.abs(rgb[i + 2] - b[i + 2])) / 3;
+    }
+    return { D, mode: 'capt' };
+  }
+  // Fondo = mediana del color en el borde de la zona de conteo
+  const s = [];
+  const xa = Math.min(roi.x0 + 2, roi.x1 - 1), xb = Math.max(roi.x1 - 3, roi.x0), ya = Math.min(roi.y0 + 2, roi.y1 - 1), yb = Math.max(roi.y1 - 3, roi.y0);
+  for (let x = roi.x0; x < roi.x1; x += 4) s.push((ya * w + x) * 3, (yb * w + x) * 3);
+  for (let y = roi.y0; y < roi.y1; y += 4) s.push((y * w + xa) * 3, (y * w + xb) * 3);
+  const med = c => { const a = s.map(i => rgb[i + c]).sort((p, q) => p - q); return a[a.length >> 1]; };
+  const bg = [med(0), med(1), med(2)];
+  for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) {
+    const p = y * w + x, i = p * 3;
+    D[p] = (Math.abs(rgb[i] - bg[0]) + Math.abs(rgb[i + 1] - bg[1]) + Math.abs(rgb[i + 2] - bg[2])) / 3;
+  }
+  return { D, mode: 'auto' };
+}
+function otsu(D, w, roi) {
+  const hist = new Float64Array(256); let n = 0;
+  for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) { hist[D[y * w + x]]++; n++; }
+  let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, best = -1, t = 0;
+  for (let i = 0; i < 256; i++) {
+    wB += hist[i]; if (!wB) continue;
+    const wF = n - wB; if (!wF) break;
+    sumB += i * hist[i];
+    const mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > best) { best = v; t = i; }
+  }
+  return t;
+}
+function morph(mask, w, h, r, erode) { // erosión/dilatación cuadrada con imagen integral
+  if (r <= 0) return mask;
+  const W1 = w + 1, I = new Uint32Array(W1 * (h + 1));
+  for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += mask[y * w + x]; I[(y + 1) * W1 + x + 1] = I[y * W1 + x + 1] + row; } }
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
+      const s = I[(y1 + 1) * W1 + x1 + 1] - I[y0 * W1 + x1 + 1] - I[(y1 + 1) * W1 + x0] + I[y0 * W1 + x0];
+      out[y * w + x] = erode ? (s === (x1 - x0 + 1) * (y1 - y0 + 1) ? 1 : 0) : (s > 0 ? 1 : 0);
+    }
+  }
+  return out;
+}
+function components(mask, w, h, minArea) {
+  const labels = new Int32Array(w * h), seen = new Uint8Array(w * h), pix = new Int32Array(w * h);
+  const out = [];
+  for (let s = 0; s < w * h; s++) {
+    if (!mask[s] || seen[s]) continue;
+    let top = 0, n = 0, sx = 0, sy = 0, minX = w, minY = h, maxX = 0, maxY = 0;
+    const start = 0;
+    pix[top++] = s; seen[s] = 1;
+    // pila en pix[n..top): los ya procesados quedan en pix[0..n)
+    while (n < top) {
+      const p = pix[n++];
+      const x = p % w, y = (p / w) | 0;
+      sx += x; sy += y;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; pix[top++] = p - 1; }
+      if (x < w - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; pix[top++] = p + 1; }
+      if (y > 0 && mask[p - w] && !seen[p - w]) { seen[p - w] = 1; pix[top++] = p - w; }
+      if (y < h - 1 && mask[p + w] && !seen[p + w]) { seen[p + w] = 1; pix[top++] = p + w; }
+    }
+    if (n >= minArea) {
+      const id = out.length + 1;
+      for (let i = start; i < n; i++) labels[pix[i]] = id;
+      out.push({ id, area: n, cx: sx / n, cy: sy / n, minX, minY, maxX, maxY });
+    }
+  }
+  return { comps: out, labels };
+}
+function distT(mask, w, h) { // distancia al fondo (chamfer 3-4, en tercios de píxel)
+  const d = new Uint16Array(w * h);
+  for (let p = 0; p < w * h; p++) d[p] = mask[p] ? 60000 : 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const p = y * w + x; if (!d[p]) continue;
+    let m = d[p];
+    if (x === 0 || y === 0 || x === w - 1) m = Math.min(m, 3);
+    if (x > 0) m = Math.min(m, d[p - 1] + 3);
+    if (y > 0) { m = Math.min(m, d[p - w] + 3); if (x > 0) m = Math.min(m, d[p - w - 1] + 4); if (x < w - 1) m = Math.min(m, d[p - w + 1] + 4); }
+    d[p] = m;
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const p = y * w + x; if (!d[p]) continue;
+    let m = d[p];
+    if (y === h - 1) m = Math.min(m, 3);
+    if (x < w - 1) m = Math.min(m, d[p + 1] + 3);
+    if (y < h - 1) { m = Math.min(m, d[p + w] + 3); if (x < w - 1) m = Math.min(m, d[p + w + 1] + 4); if (x > 0) m = Math.min(m, d[p + w - 1] + 4); }
+    d[p] = m;
+  }
+  return d;
+}
+function findPeaks(mask, labels, w, h, comps) {
+  const d = distT(mask, w, h);
+  comps.forEach(c => c.cand = []);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const p = y * w + x, v = d[p];
+    if (v < 6) continue;
+    const L = labels[p]; if (!L) continue;
+    if (v >= d[p - 1] && v >= d[p + 1] && v >= d[p - w] && v >= d[p + w] &&
+        v >= d[p - w - 1] && v >= d[p - w + 1] && v >= d[p + w - 1] && v >= d[p + w + 1]) comps[L - 1].cand.push([x, y, v]);
+  }
+  comps.forEach(c => {
+    c.cand.sort((a, b) => b[2] - a[2]);
+    const vmax = c.cand.length ? c.cand[0][2] : 0, acc = [];
+    for (const q of c.cand) {
+      if (q[2] < vmax * 0.45 || acc.length > 300) break;
+      let ok = true;
+      for (const a of acc) {
+        const r = Math.max(a[2], q[2]) / 3, dx = a[0] - q[0], dy = a[1] - q[1];
+        if (dx * dx + dy * dy <= r * r) { ok = false; break; }
+      }
+      if (ok) acc.push(q);
+    }
+    c.peaks = acc; delete c.cand;
+  });
+}
 
 function analyze() {
-  const thr = +document.getElementById('sens').value;
-  const minArea = +document.getElementById('minArea').value;
-  const { img, scale } = grab();
-  const { mask, w, h } = segment(img, thr);
-  const comps = components(mask, w, h, minArea);
-  return { comps, scale, w, h };
-}
-
-function draw(result) {
-  const { comps, scale } = result;
-  octx.clearRect(0, 0, overlay.width, overlay.height);
-  const k = 1 / scale;
-  let total = 0, suspicious = 0;
-  octx.lineWidth = 2; octx.font = (14 * k) + 'px sans-serif'; octx.textAlign = 'center';
+  const { rgb, w, h } = grabRGB();
+  const roi = roiPx(w, h);
+  const { D, mode } = diffMap(rgb, w, h, roi);
+  let thr = S.auto ? Math.max(10, otsu(D, w, roi)) * (130 - S.sens) / 60 : 90 - S.sens * 0.85;
+  thr = Math.max(3, Math.round(thr));
+  let mask = new Uint8Array(w * h);
+  for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) { const p = y * w + x; mask[p] = D[p] > thr ? 1 : 0; }
+  if (S.fill) mask = morph(morph(mask, w, h, 1, false), w, h, 1, true);           // cierre: tapa huecos y brillos
+  if (S.clean > 0) mask = morph(morph(mask, w, h, S.clean, true), w, h, S.clean, false); // apertura: quita ruido y puentes finos
+  const scale2 = (w / 640) * (w / 640);
+  const minA = Math.max(2, Math.round(S.minArea * scale2));
+  const { comps, labels } = components(mask, w, h, minA);
+  if (S.split === 'forma') findPeaks(mask, labels, w, h, comps);
+  const rf = refFrac(), refArea = rf ? rf * w * h : null;
+  let total = 0, groups = 0, ignored = 0, small = 0;
   comps.forEach(c => {
-    let n = 1, color = '#4ade80';
-    if (refArea) {
-      const ratio = c.area / refArea;
-      if (ratio > 1.6) { n = Math.round(ratio); color = '#fb923c'; suspicious++; }
-      else if (ratio < 0.4) { color = '#f87171'; }
-    }
-    total += n;
-    octx.strokeStyle = color; octx.fillStyle = color;
-    octx.strokeRect(c.minX * k, c.minY * k, (c.maxX - c.minX) * k, (c.maxY - c.minY) * k);
-    octx.fillText(n > 1 ? ('~' + n) : String(total), c.cx * k, (c.minY * k) - 4);
+    c.n = 1; c.kind = 'ok';
+    const ratio = refArea ? c.area / refArea : null;
+    if (ratio !== null && S.ignoreSmall && ratio < 0.35) { c.n = 0; c.kind = 'ign'; ignored++; return; }
+    if (S.split === 'forma') c.n = Math.max(1, c.peaks.length);
+    else if (ratio !== null && ratio > 1.5) c.n = Math.round(ratio);
+    if (c.n > 1) { c.kind = 'grp'; groups++; }
+    else if (ratio !== null && ratio < 0.6) { c.kind = 'small'; small++; }
+    total += c.n;
   });
-  currentTotal = total;
-  totalEl.textContent = total;
-  msg.textContent = suspicious
-    ? 'Atención: ' + suspicious + ' grupo(s) en naranja son piezas pegadas, el número es estimado. Separalas y volvé a contar.'
-    : (refArea ? '' : 'Sin calibrar: cada mancha cuenta como 1 pieza. Calibrá con una pieza para detectar piezas pegadas.');
+  return { w, h, comps, labels, mask, thr, total, groups, ignored, small, mode };
 }
 
-function countNow() {
-  if (!video.videoWidth) return;
-  draw(analyze());
-}
-
-overlay.addEventListener('click', e => {
-  if (!calibrating) return;
-  const r = overlay.getBoundingClientRect();
-  const fx = (e.clientX - r.left) / r.width;
-  const fy = (e.clientY - r.top) / r.height;
-  const res = analyze();
-  const px = fx * res.w, py = fy * res.h;
-  const hit = res.comps.find(c => px >= c.minX && px <= c.maxX && py >= c.minY && py <= c.maxY);
-  if (hit) {
-    refArea = hit.area;
-    msg.textContent = 'Calibrado. Área de una pieza: ' + refArea + ' px.';
-  } else {
-    msg.textContent = 'No encontré una pieza ahí. Probá tocar justo sobre ella o bajá la sensibilidad.';
+/* ---------- Dibujo ---------- */
+let roiMode = false, roiDrag = null;
+const COLORS = { ok: '#4ade80', small: '#f87171', grp: '#fb923c', ign: '#9ca3af' };
+function draw() {
+  const OW = overlay.width, OH = overlay.height, dpr = window.devicePixelRatio || 1;
+  octx.clearRect(0, 0, OW, OH);
+  const R = lastRes;
+  if (R && S.showMask) {
+    maskCv.width = R.w; maskCv.height = R.h;
+    const im = mctx.createImageData(R.w, R.h);
+    for (let p = 0; p < R.w * R.h; p++) if (R.mask[p]) { const i = p * 4; im.data[i] = 59; im.data[i + 1] = 130; im.data[i + 2] = 246; im.data[i + 3] = 150; }
+    mctx.putImageData(im, 0, 0);
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(maskCv, 0, 0, OW, OH);
   }
-  calibrating = false;
-  document.getElementById('btnCal').textContent = 'Calibrar';
-  countNow();
-});
+  const zone = roiDrag ? normRect(roiDrag) : S.roi;
+  if (zone) {
+    const x0 = zone.x0 * OW, y0 = zone.y0 * OH, x1 = zone.x1 * OW, y1 = zone.y1 * OH;
+    octx.fillStyle = 'rgba(0,0,0,.5)';
+    octx.fillRect(0, 0, OW, y0); octx.fillRect(0, y1, OW, OH - y1);
+    octx.fillRect(0, y0, x0, y1 - y0); octx.fillRect(x1, y0, OW - x1, y1 - y0);
+    octx.strokeStyle = '#38bdf8'; octx.lineWidth = 2 * dpr; octx.setLineDash([8 * dpr, 6 * dpr]);
+    octx.strokeRect(x0, y0, x1 - x0, y1 - y0); octx.setLineDash([]);
+  }
+  if (!R || roiDrag) return;
+  const k = OW / R.w, fs = Math.round(12 * dpr);
+  octx.font = '600 ' + fs + 'px system-ui, sans-serif'; octx.textBaseline = 'bottom';
+  octx.lineWidth = Math.max(1.5, 1.5 * dpr);
+  let idx = 0;
+  R.comps.forEach(c => {
+    const x = c.minX * k, y = c.minY * k, bw = (c.maxX - c.minX + 1) * k, bh = (c.maxY - c.minY + 1) * k;
+    octx.strokeStyle = COLORS[c.kind];
+    if (c.kind === 'ign') { octx.setLineDash([3 * dpr, 3 * dpr]); octx.strokeRect(x, y, bw, bh); octx.setLineDash([]); return; }
+    octx.strokeRect(x, y, bw, bh);
+    let label;
+    if (c.n > 1) { label = '×' + c.n; idx += c.n; } else { idx++; label = String(idx); }
+    if (c.n > 1 && c.peaks) {
+      octx.fillStyle = COLORS.grp;
+      c.peaks.forEach(q => { octx.beginPath(); octx.arc((q[0] + .5) * k, (q[1] + .5) * k, 3 * dpr, 0, 6.3); octx.fill(); });
+    }
+    const tw = octx.measureText(label).width + 6 * dpr;
+    let ty = y - 2 * dpr; if (ty - fs < 0) ty = y + fs + 2 * dpr;
+    octx.fillStyle = 'rgba(0,0,0,.65)'; octx.fillRect(x, ty - fs - 1 * dpr, tw, fs + 3 * dpr);
+    octx.fillStyle = COLORS[c.kind]; octx.fillText(label, x + 3 * dpr, ty + 1 * dpr);
+  });
+}
 
-document.getElementById('btnCal').onclick = () => {
-  calibrating = !calibrating;
-  document.getElementById('btnCal').textContent = calibrating ? 'Tocá una pieza...' : 'Calibrar';
-};
-document.getElementById('btnCount').onclick = countNow;
-document.getElementById('btnFreeze').onclick = e => {
+/* ---------- Conteo ---------- */
+let frozen = false, calibrating = false, live = false, counted = false, pending = false;
+function countNow() {
+  if (!video.videoWidth) { msg.textContent = 'Esperando la cámara...'; return; }
+  lastRes = analyze(); counted = true;
+  totalEl.textContent = lastRes.total;
+  draw(); showVals();
+  const R = lastRes, parts = [];
+  if (R.groups) parts.push(R.groups + ' grupo(s) pegados en naranja: el número es estimado, conviene separarlos');
+  if (R.small) parts.push(R.small + ' mancha(s) chicas en rojo para revisar');
+  if (R.ignored) parts.push(R.ignored + ' ignorada(s) por chicas');
+  if (!refFrac() && S.split === 'area') parts.push('sin calibrar');
+  if (S.bgMode === 'capt' && R.mode !== 'capt') parts.push('falta capturar el fondo, uso el automático');
+  msg.textContent = parts.join(' · ');
+}
+function scheduleCount() {
+  if (!counted || pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; countNow(); });
+}
+$('btnCount').onclick = countNow;
+$('btnFreeze').onclick = e => {
   frozen = !frozen;
-  if (frozen) { video.pause(); } else { video.play(); }
-  e.target.textContent = frozen ? 'Descongelar' : 'Congelar';
+  if (frozen) { video.pause(); countNow(); } else { video.play(); }
+  e.target.textContent = frozen ? 'Seguir' : 'Congelar';
+  e.target.classList.toggle('on', frozen);
 };
-document.getElementById('btnLive').onclick = e => {
+$('btnLive').onclick = e => {
   live = !live;
-  e.target.textContent = 'Modo continuo: ' + (live ? 'sí' : 'no');
+  e.target.classList.toggle('on', live);
+  if (live) countNow();
 };
-setInterval(() => { if (live && !frozen) countNow(); }, 700);
-['sens', 'minArea'].forEach(id => document.getElementById(id).addEventListener('change', countNow));
+setInterval(() => { if (live && !frozen && !roiMode && !calibrating) countNow(); }, 600);
+
+/* ---------- Calibración y zona (toques sobre la imagen) ---------- */
+function setCal(on) {
+  calibrating = on;
+  $('btnCal').textContent = on ? 'Tocá 1 pieza' : 'Calibrar';
+  $('btnCal').classList.toggle('on', on);
+  if (on) { roiMode = false; setRoiBtn(); msg.textContent = 'Tocá una pieza suelta (que no toque a otra).'; }
+}
+$('btnCal').onclick = () => setCal(!calibrating);
+$('btnCalReset').onclick = () => { S.refSamples = []; saveS(); showVals(); msg.textContent = 'Calibración borrada.'; scheduleCount(); };
+$('btnDefaults').onclick = () => {
+  const keep = { roi: S.roi, refSamples: S.refSamples };
+  S = Object.assign(JSON.parse(JSON.stringify(DEF)), keep);
+  saveS(); syncUI(); scheduleCount();
+};
+
+function calibrateAt(fx, fy) {
+  const R = analyze();
+  const px = Math.min(R.w - 1, Math.floor(fx * R.w)), py = Math.min(R.h - 1, Math.floor(fy * R.h));
+  let c = null;
+  const L = R.labels[py * R.w + px];
+  if (L) c = R.comps[L - 1];
+  else {
+    let best = Infinity; const tol = 0.03 * R.w;
+    R.comps.forEach(q => {
+      const dx = Math.max(q.minX - px, 0, px - q.maxX), dy = Math.max(q.minY - py, 0, py - q.maxY), d = Math.hypot(dx, dy);
+      if (d < best && d <= tol) { best = d; c = q; }
+    });
+  }
+  setCal(false);
+  if (!c) { msg.textContent = 'No encontré una pieza ahí. Tocá justo sobre ella o subí la sensibilidad (mirá "Ver máscara").'; return; }
+  S.refSamples = (S.refSamples || []).concat(c.area / (R.w * R.h)).slice(-7);
+  saveS();
+  countNow();
+  msg.textContent = 'Muestra ' + S.refSamples.length + ' guardada (' + c.area + ' px). ' + (S.refSamples.length < 3 ? 'Sumá otra con Calibrar para mayor precisión.' : 'Calibración lista.');
+}
+
+function setRoiBtn() { $('btnRoi').textContent = roiMode ? 'Arrastrá sobre la imagen...' : 'Marcar zona'; $('btnRoi').classList.toggle('on', roiMode); }
+$('btnRoi').onclick = () => { roiMode = !roiMode; if (roiMode) setCal(false); setRoiBtn(); if (roiMode) msg.textContent = 'Arrastrá un rectángulo sobre la imagen.'; };
+$('btnRoiClear').onclick = () => { S.roi = null; saveS(); draw(); scheduleCount(); };
+function normRect(r) { return { x0: Math.min(r.x0, r.x1), y0: Math.min(r.y0, r.y1), x1: Math.max(r.x0, r.x1), y1: Math.max(r.y0, r.y1) }; }
+function evPos(e) {
+  const r = overlay.getBoundingClientRect();
+  return { fx: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), fy: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
+}
+overlay.addEventListener('pointerdown', e => {
+  const { fx, fy } = evPos(e);
+  if (roiMode) { roiDrag = { x0: fx, y0: fy, x1: fx, y1: fy }; overlay.setPointerCapture(e.pointerId); draw(); e.preventDefault(); return; }
+  if (calibrating) { calibrateAt(fx, fy); e.preventDefault(); }
+});
+overlay.addEventListener('pointermove', e => {
+  if (!roiDrag) return;
+  const { fx, fy } = evPos(e); roiDrag.x1 = fx; roiDrag.y1 = fy; draw();
+});
+function endDrag() {
+  if (!roiDrag) return;
+  const r = normRect(roiDrag); roiDrag = null; roiMode = false; setRoiBtn();
+  if (r.x1 - r.x0 > 0.05 && r.y1 - r.y0 > 0.05) { S.roi = r; saveS(); msg.textContent = 'Zona de conteo marcada.'; }
+  else msg.textContent = 'La zona es muy chica, probá de nuevo.';
+  draw(); scheduleCount();
+}
+overlay.addEventListener('pointerup', endDrag);
+overlay.addEventListener('pointercancel', endDrag);
+
+/* ---------- Fondo vacío ---------- */
+$('btnBg').onclick = () => {
+  if (!video.videoWidth) return;
+  bgFrame = grabRGB();
+  S.bgMode = 'capt'; saveS(); syncUI();
+  msg.textContent = 'Fondo capturado. Poné las piezas sin mover la cámara y tocá Contar.';
+  if (counted) countNow();
+};
+$('res').addEventListener('input', () => { if (bgFrame) { bgFrame = null; msg.textContent = 'Cambiaste la resolución: volvé a capturar el fondo vacío.'; } });
+$('blur').addEventListener('change', () => { if (bgFrame) { bgFrame = null; msg.textContent = 'Cambiaste el suavizado: volvé a capturar el fondo vacío.'; } });
 
 /* ---------- Historial por lote ---------- */
 const STORE_KEY = 'contadorPiezasHistorial';
 let registros = [];
 try { registros = JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch (e) { registros = []; }
-
-function persist() { localStorage.setItem(STORE_KEY, JSON.stringify(registros)); }
-
+function persist() { try { localStorage.setItem(STORE_KEY, JSON.stringify(registros)); } catch (e) { msg.textContent = 'No pude guardar en este dispositivo.'; } }
 function fmt(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 }
-
 function renderHist() {
-  const tb = document.getElementById('hist');
+  const tb = $('hist');
   tb.innerHTML = '';
   registros.slice().reverse().forEach(r => {
     const tr = document.createElement('tr');
@@ -282,23 +657,18 @@ function renderHist() {
     const tdB = document.createElement('td');
     const b = document.createElement('button'); b.textContent = 'Borrar';
     b.onclick = () => {
-      if (confirm('¿Borrar el registro del lote ' + r.lote + '?')) {
-        registros = registros.filter(x => x.id !== r.id);
-        persist(); renderHist();
-      }
+      if (confirm('¿Borrar el registro del lote ' + r.lote + '?')) { registros = registros.filter(x => x.id !== r.id); persist(); renderHist(); }
     };
     tdB.appendChild(b);
     tr.append(tdL, tdC, tdF, tdB);
     tb.appendChild(tr);
   });
 }
-
 function addRecord(lote, cantidad) {
   registros.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), lote, cantidad, fecha: new Date().toISOString() });
   persist(); renderHist();
   msg.textContent = 'Guardado: lote ' + lote + ', ' + cantidad + ' piezas.';
 }
-
 function sumToLast(lote, cantidad) {
   for (let i = registros.length - 1; i >= 0; i--) {
     if (registros[i].lote.toLowerCase() === lote.toLowerCase()) {
@@ -310,45 +680,37 @@ function sumToLast(lote, cantidad) {
     }
   }
 }
-
-const dlg = document.getElementById('dlg');
+const dlg = $('dlg');
 function askDuplicate(lote, cantidad, previa) {
-  document.getElementById('dlgText').textContent =
-    'El lote ' + lote + ' ya tiene un registro de ' + previa + ' piezas. Ahora contás ' + cantidad + '. ¿Qué querés hacer?';
+  $('dlgText').textContent = 'El lote ' + lote + ' ya tiene un registro de ' + previa + ' piezas. Ahora contás ' + cantidad + '. ¿Qué querés hacer?';
   dlg.style.display = 'flex';
-  document.getElementById('dlgSum').onclick = () => { dlg.style.display = 'none'; sumToLast(lote, cantidad); };
-  document.getElementById('dlgNew').onclick = () => { dlg.style.display = 'none'; addRecord(lote, cantidad); };
-  document.getElementById('dlgCancel').onclick = () => { dlg.style.display = 'none'; };
+  $('dlgSum').onclick = () => { dlg.style.display = 'none'; sumToLast(lote, cantidad); };
+  $('dlgNew').onclick = () => { dlg.style.display = 'none'; addRecord(lote, cantidad); };
+  $('dlgCancel').onclick = () => { dlg.style.display = 'none'; };
 }
-
-document.getElementById('btnSave').onclick = () => {
-  const lote = document.getElementById('lote').value.trim();
+$('btnSave').onclick = () => {
+  const lote = $('lote').value.trim();
+  const cant = lastRes ? lastRes.total : 0;
   if (!lote) { msg.textContent = 'Escribí el número de lote antes de guardar.'; return; }
-  if (!currentTotal) { msg.textContent = 'Todavía no hay un conteo. Tocá Contar primero.'; return; }
+  if (!cant) { msg.textContent = 'Todavía no hay un conteo. Tocá Contar primero.'; return; }
   const previo = registros.slice().reverse().find(r => r.lote.toLowerCase() === lote.toLowerCase());
-  if (previo) askDuplicate(lote, currentTotal, previo.cantidad);
-  else addRecord(lote, currentTotal);
+  if (previo) askDuplicate(lote, cant, previo.cantidad); else addRecord(lote, cant);
 };
-
-document.getElementById('btnExport').onclick = () => {
+$('btnExport').onclick = () => {
   if (!registros.length) { msg.textContent = 'No hay registros para exportar.'; return; }
   const esc = s => '"' + String(s).replace(/"/g, '""') + '"';
   const lines = ['Lote;Cantidad;Fecha y hora'];
   registros.forEach(r => lines.push([esc(r.lote), r.cantidad, esc(fmt(r.fecha))].join(';')));
-  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'conteo-por-lote.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
+  a.href = URL.createObjectURL(blob); a.download = 'conteo-por-lote.csv'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('btnClear').onclick = () => {
+  if (confirm('¿Borrar TODO el historial? Esto no se puede deshacer.')) { registros = []; persist(); renderHist(); }
 };
 
-document.getElementById('btnClear').onclick = () => {
-  if (confirm('¿Borrar TODO el historial? Esto no se puede deshacer.')) {
-    registros = []; persist(); renderHist();
-  }
-};
-
+syncUI();
 renderHist();
 startCam();
 </script>
