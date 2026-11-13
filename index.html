@@ -18,6 +18,7 @@
   header { grid-area: top; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
   header .tot { display: flex; align-items: baseline; gap: 6px; margin-right: auto; }
   #total { font-size: 30px; font-weight: 800; color: #4ade80; line-height: 1; }
+  #stable { font-size: 12px; color: var(--mut); }
   #stage { grid-area: stage; position: relative; display: flex; align-items: center; justify-content: center; background: #000; min-height: 120px; overflow: hidden; }
   #frame { position: relative; }
   #frame video, #frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -30,13 +31,17 @@
     body { grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "stage top" "stage bar" "stage panel"; }
     #panel { max-height: none; }
   }
-  button, select, input[type=text] { font: inherit; font-size: 15px; padding: 10px 12px; border: 0; border-radius: 8px; background: var(--acc); color: #fff; }
-  select { background: #263041; max-width: 46vw; }
+  button, select, input[type=text], input[type=number] { font: inherit; font-size: 15px; padding: 10px 12px; border: 0; border-radius: 8px; background: var(--acc); color: #fff; }
+  select { background: #263041; max-width: 100%; }
+  header select { max-width: 40vw; }
   button.sec { background: #374151; }
   button.ok { background: var(--ok); }
   button.on { background: #b45309; }
   button.sm { padding: 7px 10px; font-size: 13px; }
-  input[type=text] { background: #0f141c; border: 1px solid var(--line); flex: 1; min-width: 120px; }
+  button:disabled { opacity: .5; }
+  input[type=text], input[type=number] { background: #0f141c; border: 1px solid var(--line); }
+  input[type=text] { flex: 1; min-width: 120px; }
+  input[type=number] { width: 80px; }
   details { border-top: 1px solid var(--line); padding: 6px 0; }
   summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
@@ -55,7 +60,8 @@
 </head>
 <body>
 <header>
-  <div class="tot"><span>Piezas</span><span id="total">0</span></div>
+  <div class="tot"><span>Piezas</span><span id="total">0</span><span id="stable"></span></div>
+  <button id="btnExpo" class="sec sm" hidden>Fijar luz</button>
   <button id="btnTorch" class="sec sm" hidden>Linterna</button>
   <select id="camSel" aria-label="Cámara"></select>
 </header>
@@ -77,6 +83,17 @@
 
 <div id="panel">
   <details open>
+    <summary>Ajuste automático (recomendado)</summary>
+    <div class="row">
+      <label class="field">Piezas sueltas en la mesa
+        <input type="number" id="known" min="1" max="500" value="5">
+      </label>
+      <button id="btnTune" class="ok">Ajustar solo</button>
+    </div>
+    <div class="hint">Poné una cantidad conocida de piezas separadas entre sí, escribí cuántas son y tocá "Ajustar solo". La app prueba muchas combinaciones y se queda con la que cuenta bien con manchas parejas. Repetilo si cambia la luz o la altura de la cámara.</div>
+  </details>
+
+  <details open>
     <summary>Guardar por lote</summary>
     <div class="row">
       <input type="text" id="lote" placeholder="Número de lote" autocomplete="off">
@@ -84,7 +101,7 @@
     </div>
   </details>
 
-  <details open>
+  <details>
     <summary>Ajustes de detección</summary>
     <div class="row">
       <label class="field">Sensibilidad: <b id="vSens"></b>
@@ -108,6 +125,13 @@
       </label>
     </div>
     <div class="row">
+      <label class="field">Fondo
+        <select id="bgMode">
+          <option value="local">Local (tolera luz despareja)</option>
+          <option value="capt">Foto del fondo vacío</option>
+          <option value="auto">Color de los bordes (fondo muy parejo)</option>
+        </select>
+      </label>
       <label class="field">Piezas pegadas
         <select id="split">
           <option value="area">Estimar por área (cualquier forma)</option>
@@ -116,10 +140,12 @@
       </label>
     </div>
     <div class="row">
+      <label class="chk"><input type="checkbox" id="edges"> Usar bordes (metal)</label>
+      <label class="chk"><input type="checkbox" id="fill"> Rellenar brillos y huecos</label>
       <label class="chk"><input type="checkbox" id="auto"> Umbral automático</label>
       <label class="chk"><input type="checkbox" id="blur"> Suavizar imagen</label>
-      <label class="chk"><input type="checkbox" id="fill"> Rellenar brillos</label>
       <label class="chk"><input type="checkbox" id="ignoreSmall"> Ignorar manchas chicas</label>
+      <label class="chk"><input type="checkbox" id="ignoreBorder"> Ignorar lo que toca el borde</label>
       <label class="chk"><input type="checkbox" id="showMask"> Ver máscara</label>
     </div>
     <div class="row">
@@ -130,22 +156,14 @@
   </details>
 
   <details>
-    <summary>Zona de conteo y fondo</summary>
+    <summary>Zona de conteo y fondo vacío</summary>
     <div class="row">
       <button id="btnRoi" class="sec sm">Marcar zona</button>
       <button id="btnRoiClear" class="sec sm">Quitar zona</button>
-    </div>
-    <div class="hint">Arrastrá un rectángulo sobre la imagen. Solo se cuenta lo que queda adentro (sirve para dejar afuera bordes de la mesa, cajas o sombras).</div>
-    <div class="row">
-      <label class="field">Fondo
-        <select id="bgMode">
-          <option value="auto">Automático (color de los bordes)</option>
-          <option value="capt">Foto del fondo vacío</option>
-        </select>
-      </label>
       <button id="btnBg" class="sec sm">Capturar fondo vacío</button>
     </div>
-    <div class="hint">Con la cámara quieta, sacá las piezas, tocá "Capturar fondo vacío" y volvé a ponerlas. Es el modo más preciso con fondos con manchas o luz despareja.</div>
+    <div class="hint">Zona: arrastrá un rectángulo sobre la imagen; solo se cuenta lo de adentro. Dejá un margen entre las piezas y el borde de la zona.</div>
+    <div class="hint">Fondo vacío: con la cámara fija, sacá las piezas, tocá "Capturar fondo vacío" y volvé a ponerlas.</div>
   </details>
 
   <details>
@@ -163,11 +181,12 @@
   <details>
     <summary>Consejos para contar mejor</summary>
     <ul>
-      <li>Fondo liso y de color opuesto a las piezas (piezas claras sobre fondo oscuro, o al revés).</li>
-      <li>Luz difusa desde arriba; evitá sombras duras y reflejos directos.</li>
-      <li>Cámara quieta y paralela a la mesa. Calibrá tocando 3 piezas sueltas distintas.</li>
-      <li>Activá "Ver máscara": lo azul es lo que la app considera pieza. Ajustá la sensibilidad hasta que cada pieza sea una mancha limpia.</li>
-      <li>Verde: pieza contada. Naranja: grupo de piezas pegadas (número estimado). Rojo: mancha chica, revisar. Gris punteado: ignorada.</li>
+      <li><b>Lo que más ayuda:</b> piezas metálicas sobre fondo negro mate (cartulina negra, goma EVA o paño). Sobre papel blanco el metal se confunde con el fondo.</li>
+      <li>Cámara fija, mirando desde arriba en forma perpendicular a la mesa, siempre a la misma altura.</li>
+      <li>Luz difusa y pareja; evitá sombras duras y que la pantalla o una ventana se refleje en el metal.</li>
+      <li>Si la webcam aclara y oscurece sola, tocá "Fijar luz" (si aparece).</li>
+      <li>Activá "Ver máscara": lo azul es lo que la app considera pieza.</li>
+      <li>Verde: pieza. Naranja: piezas pegadas (estimado). Rojo: mancha chica, revisar. Gris punteado: ignorada.</li>
     </ul>
   </details>
 </div>
@@ -190,11 +209,12 @@ const wctx = work.getContext('2d', { willReadFrequently: true });
 const maskCv = document.createElement('canvas');
 const mctx = maskCv.getContext('2d');
 const msg = $('msg'), totalEl = $('total'), camSel = $('camSel');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /* ---------- Ajustes (se recuerdan en el dispositivo) ---------- */
-const SET_KEY = 'contadorPiezasAjustes';
-const DEF = { sens: 70, minArea: 40, clean: 1, res: 640, split: 'area', auto: true, blur: true, fill: true,
-  ignoreSmall: true, showMask: false, bgMode: 'auto', roi: null, refSamples: [] };
+const SET_KEY = 'contadorPiezasAjustes3';
+const DEF = { sens: 60, minArea: 40, clean: 1, res: 640, split: 'area', auto: true, blur: true, fill: true, edges: true,
+  ignoreSmall: true, ignoreBorder: true, showMask: false, bgMode: 'local', roi: null, refSamples: [], known: 5 };
 let S = JSON.parse(JSON.stringify(DEF));
 try { Object.assign(S, JSON.parse(localStorage.getItem(SET_KEY)) || {}); } catch (e) {}
 function saveS() { try { localStorage.setItem(SET_KEY, JSON.stringify(S)); } catch (e) {} }
@@ -203,9 +223,8 @@ function refFrac() {
   const a = S.refSamples.slice().sort((x, y) => x - y);
   return a[a.length >> 1];
 }
-
-const BINDS = { sens: 'num', minArea: 'num', clean: 'num', res: 'num', split: 'str', bgMode: 'str',
-  auto: 'chk', blur: 'chk', fill: 'chk', ignoreSmall: 'chk', showMask: 'chk' };
+const BINDS = { sens: 'num', minArea: 'num', clean: 'num', res: 'num', split: 'str', bgMode: 'str', known: 'num',
+  auto: 'chk', blur: 'chk', fill: 'chk', edges: 'chk', ignoreSmall: 'chk', ignoreBorder: 'chk', showMask: 'chk' };
 function syncUI() {
   for (const k in BINDS) { const el = $(k); if (BINDS[k] === 'chk') el.checked = !!S[k]; else el.value = S[k]; }
   showVals();
@@ -216,20 +235,21 @@ function showVals() {
   $('vClean').textContent = ['no', 'baja', 'media', 'alta'][S.clean];
   const n = (S.refSamples || []).length;
   $('calInfo').textContent = n
-    ? 'Calibrada con ' + n + ' muestra(s). ' + (n < 3 ? 'Recomendado: tocá Calibrar y sumá hasta 3 piezas.' : '')
-    : 'Sin calibrar: cada mancha cuenta como 1 pieza y no se detectan piezas pegadas.';
+    ? 'Calibrada (' + n + ' muestra' + (n > 1 ? 's' : '') + ').'
+    : 'Sin calibrar: cada mancha cuenta como 1 pieza. Usá "Ajustar solo" o "Calibrar".';
 }
 for (const k in BINDS) {
   $(k).addEventListener(BINDS[k] === 'chk' ? 'change' : 'input', e => {
     const el = e.target;
     S[k] = BINDS[k] === 'chk' ? el.checked : BINDS[k] === 'num' ? +el.value : el.value;
-    if (k === 'bgMode' && S.bgMode === 'capt' && !bgFrame) msg.textContent = 'Todavía no capturaste el fondo vacío. Tocá "Capturar fondo vacío".';
-    saveS(); showVals(); scheduleCount();
+    if ((k === 'res' || k === 'blur') && bgFrame) { bgFrame = null; msg.textContent = 'Cambió el análisis: volvé a capturar el fondo vacío.'; }
+    if (k === 'bgMode' && S.bgMode === 'capt' && !bgFrame) msg.textContent = 'Falta capturar el fondo vacío (en "Zona de conteo y fondo vacío").';
+    saveS(); showVals(); hist5 = []; if (k !== 'known') scheduleCount();
   });
 }
 
 /* ---------- Cámara ---------- */
-let stream = null, track = null, torchOn = false;
+let stream = null, track = null, torchOn = false, expoLocked = false;
 async function listCams() {
   const devs = await navigator.mediaDevices.enumerateDevices();
   const cams = devs.filter(d => d.kind === 'videoinput');
@@ -257,7 +277,9 @@ async function startCam(deviceId) {
     await listCams();
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     $('btnTorch').hidden = !caps.torch;
-    torchOn = false; $('btnTorch').classList.remove('on');
+    $('btnExpo').hidden = !(caps.exposureMode && caps.exposureMode.includes('manual'));
+    torchOn = false; expoLocked = false;
+    $('btnTorch').classList.remove('on'); $('btnExpo').classList.remove('on'); $('btnExpo').textContent = 'Fijar luz';
   } catch (e) {
     msg.textContent = 'No pude abrir la cámara: ' + e.message + '. Abrí la página con HTTPS y dale permiso a la cámara.';
   }
@@ -269,6 +291,28 @@ $('btnTorch').onclick = async () => {
     await track.applyConstraints({ advanced: [{ torch: torchOn }] });
     $('btnTorch').classList.toggle('on', torchOn);
   } catch (e) { torchOn = false; msg.textContent = 'Esta cámara no permite encender la linterna.'; }
+};
+$('btnExpo').onclick = async () => {
+  // Congela exposición, balance de blancos y foco para que la imagen no cambie sola
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  const next = !expoLocked, adv = {};
+  const mode = next ? 'manual' : 'continuous';
+  if (caps.exposureMode && caps.exposureMode.includes(mode)) adv.exposureMode = mode;
+  if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes(mode)) adv.whiteBalanceMode = mode;
+  if (caps.focusMode && caps.focusMode.includes(mode)) adv.focusMode = mode;
+  try {
+    if (next) {
+      const st = track.getSettings();
+      if (st.exposureTime && adv.exposureMode) adv.exposureTime = st.exposureTime;
+      if (st.colorTemperature && adv.whiteBalanceMode) adv.colorTemperature = st.colorTemperature;
+    }
+    await track.applyConstraints({ advanced: [adv] });
+    expoLocked = next;
+    $('btnExpo').classList.toggle('on', expoLocked);
+    $('btnExpo').textContent = expoLocked ? 'Luz fija' : 'Fijar luz';
+    msg.textContent = expoLocked ? 'Exposición fija. Si cambiás la luz del lugar, soltala y volvé a fijarla.' : 'Exposición automática.';
+    bgFrame = null;
+  } catch (e) { msg.textContent = 'La cámara no aceptó fijar la exposición: ' + e.message; }
 };
 
 /* ---------- Encaje del video en el espacio disponible ---------- */
@@ -288,19 +332,14 @@ video.addEventListener('resize', fitFrame);
 if (window.ResizeObserver) new ResizeObserver(fitFrame).observe(stage);
 window.addEventListener('resize', fitFrame);
 
-/* ---------- Procesamiento de imagen ---------- */
+/* ---------- Captura ---------- */
 let bgFrame = null;   // { w, h, rgb } foto del fondo vacío
 let lastRes = null;
 
-function toRGB(d, w, h) {
-  const out = new Uint8ClampedArray(w * h * 3);
-  for (let p = 0, i = 0; p < w * h; p++, i += 4) { out[p * 3] = d[i]; out[p * 3 + 1] = d[i + 1]; out[p * 3 + 2] = d[i + 2]; }
-  return out;
-}
-function blurRGB(d, w, h) { // desenfoque 3x3 separable
+function blurRGB(d, w, h, stride) { // desenfoque 3x3 separable; stride 4 (RGBA) o 3 (RGB)
   const tmp = new Float32Array(w * h * 3), out = new Uint8ClampedArray(w * h * 3);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const a = (y * w + (x > 0 ? x - 1 : x)) * 4, b = (y * w + x) * 4, c = (y * w + (x < w - 1 ? x + 1 : x)) * 4, o = (y * w + x) * 3;
+    const a = (y * w + (x > 0 ? x - 1 : x)) * stride, b = (y * w + x) * stride, c = (y * w + (x < w - 1 ? x + 1 : x)) * stride, o = (y * w + x) * 3;
     tmp[o] = (d[a] + d[b] + d[c]) / 3; tmp[o + 1] = (d[a + 1] + d[b + 1] + d[c + 1]) / 3; tmp[o + 2] = (d[a + 2] + d[b + 2] + d[c + 2]) / 3;
   }
   for (let y = 0; y < h; y++) {
@@ -312,13 +351,25 @@ function blurRGB(d, w, h) { // desenfoque 3x3 separable
   }
   return out;
 }
-function grabRGB() {
+function grabRaw() {
   const vw = video.videoWidth, vh = video.videoHeight;
   const w = Math.min(S.res, vw), h = Math.round(vh * w / vw);
   if (work.width !== w || work.height !== h) { work.width = w; work.height = h; }
   wctx.drawImage(video, 0, 0, w, h);
-  const d = wctx.getImageData(0, 0, w, h).data;
-  return { rgb: S.blur ? blurRGB(d, w, h) : toRGB(d, w, h), w, h };
+  return { d: wctx.getImageData(0, 0, w, h).data, w, h };
+}
+// Promedia varios cuadros para bajar el ruido y el parpadeo de la webcam
+async function grabRGB(n) {
+  n = frozen ? 1 : (n || 1);
+  let acc = null, w, h;
+  for (let k = 0; k < n; k++) {
+    const g = grabRaw(); w = g.w; h = g.h;
+    if (!acc || acc.length !== w * h * 3) acc = new Float32Array(w * h * 3);
+    for (let p = 0, i = 0; p < w * h; p++, i += 4) { acc[p * 3] += g.d[i]; acc[p * 3 + 1] += g.d[i + 1]; acc[p * 3 + 2] += g.d[i + 2]; }
+    if (k < n - 1) await sleep(45);
+  }
+  for (let i = 0; i < acc.length; i++) acc[i] /= n;
+  return { rgb: S.blur ? blurRGB(acc, w, h, 3) : Uint8ClampedArray.from(acc), w, h };
 }
 function roiPx(w, h) {
   const r = S.roi;
@@ -326,29 +377,127 @@ function roiPx(w, h) {
   return { x0: Math.max(0, Math.floor(r.x0 * w)), y0: Math.max(0, Math.floor(r.y0 * h)),
            x1: Math.min(w, Math.ceil(r.x1 * w)), y1: Math.min(h, Math.ceil(r.y1 * h)) };
 }
-function diffMap(rgb, w, h, roi) {
+
+/* ---------- Mapa de diferencia con el fondo ---------- */
+function boxMean(vals, wts, gw, gh, ch, r) { // promedio ponderado en ventana (2r+1)^2 sobre la grilla
+  const W1 = gw + 1, out = new Float32Array(gw * gh * ch);
+  const Iw = new Float64Array(W1 * (gh + 1));
+  const Iv = []; for (let c = 0; c < ch; c++) Iv.push(new Float64Array(W1 * (gh + 1)));
+  for (let y = 0; y < gh; y++) {
+    let rw = 0; const rv = new Float64Array(ch);
+    for (let x = 0; x < gw; x++) {
+      const g = y * gw + x, wt = wts[g]; rw += wt;
+      Iw[(y + 1) * W1 + x + 1] = Iw[y * W1 + x + 1] + rw;
+      for (let c = 0; c < ch; c++) { rv[c] += vals[g * ch + c] * wt; Iv[c][(y + 1) * W1 + x + 1] = Iv[c][y * W1 + x + 1] + rv[c]; }
+    }
+  }
+  const sum = (I, x0, y0, x1, y1) => I[(y1 + 1) * W1 + x1 + 1] - I[y0 * W1 + x1 + 1] - I[(y1 + 1) * W1 + x0] + I[y0 * W1 + x0];
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    let rr = r, x0, y0, x1, y1, sw;
+    do { // si toda la ventana es pieza, la agranda
+      x0 = Math.max(0, x - rr); y0 = Math.max(0, y - rr); x1 = Math.min(gw - 1, x + rr); y1 = Math.min(gh - 1, y + rr);
+      sw = sum(Iw, x0, y0, x1, y1); rr *= 2;
+    } while (sw < 1 && rr < Math.max(gw, gh) * 2);
+    const g = y * gw + x;
+    for (let c = 0; c < ch; c++) out[g * ch + c] = sw >= 1 ? sum(Iv[c], x0, y0, x1, y1) / sw : vals[g * ch + c];
+  }
+  return out;
+}
+// Fondo estimado por zonas: aguanta viñeteo, sombras suaves y luz despareja
+function localBg(rgb, w, h) {
+  const f = 8, gw = Math.ceil(w / f), gh = Math.ceil(h / f), G = gw * gh;
+  const cell = new Float32Array(G * 3), cnt = new Float32Array(G);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const g = ((y / f) | 0) * gw + ((x / f) | 0), i = (y * w + x) * 3;
+    cell[g * 3] += rgb[i]; cell[g * 3 + 1] += rgb[i + 1]; cell[g * 3 + 2] += rgb[i + 2]; cnt[g]++;
+  }
+  for (let g = 0; g < G; g++) { cell[g * 3] /= cnt[g]; cell[g * 3 + 1] /= cnt[g]; cell[g * 3 + 2] /= cnt[g]; }
+  // dispersión dentro de cada celda: las celdas con borde de pieza tienen mucha
+  const spread = new Float32Array(G);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const g = ((y / f) | 0) * gw + ((x / f) | 0), i = (y * w + x) * 3;
+    spread[g] += (Math.abs(rgb[i] - cell[g * 3]) + Math.abs(rgb[i + 1] - cell[g * 3 + 1]) + Math.abs(rgb[i + 2] - cell[g * 3 + 2])) / 3;
+  }
+  for (let g = 0; g < G; g++) spread[g] /= cnt[g];
+  const r = Math.max(3, Math.round(Math.max(gw, gh) / 8));
+  let wts = new Float32Array(G).fill(1), bg = null;
+  const sMed = Array.from(spread).sort((a, b) => a - b)[G >> 1];
+  for (let it = 0; it < 3; it++) {
+    bg = boxMean(cell, wts, gw, gh, 3, r);
+    const dev = new Float32Array(G);
+    for (let g = 0; g < G; g++) dev[g] = (Math.abs(cell[g * 3] - bg[g * 3]) + Math.abs(cell[g * 3 + 1] - bg[g * 3 + 1]) + Math.abs(cell[g * 3 + 2] - bg[g * 3 + 2])) / 3;
+    const sorted = Array.from(dev).sort((a, b) => a - b), med = sorted[G >> 1];
+    const mad = Array.from(dev).map(v => Math.abs(v - med)).sort((a, b) => a - b)[G >> 1];
+    const lim = Math.max(5, med + 3 * 1.4826 * mad);
+    const slim = Math.max(4, sMed * 3);
+    for (let g = 0; g < G; g++) wts[g] = (dev[g] > lim || spread[g] > slim) ? 0 : 1;
+  }
+  // interpolación bilineal a resolución completa
+  const B = new Float32Array(w * h * 3);
+  for (let y = 0; y < h; y++) {
+    let gy = (y + 0.5) / f - 0.5; gy = Math.max(0, Math.min(gh - 1, gy));
+    const y0 = Math.floor(gy), y1 = Math.min(gh - 1, y0 + 1), ty = gy - y0;
+    for (let x = 0; x < w; x++) {
+      let gx = (x + 0.5) / f - 0.5; gx = Math.max(0, Math.min(gw - 1, gx));
+      const x0 = Math.floor(gx), x1 = Math.min(gw - 1, x0 + 1), tx = gx - x0;
+      const a = (y0 * gw + x0) * 3, b = (y0 * gw + x1) * 3, c = (y1 * gw + x0) * 3, d = (y1 * gw + x1) * 3, o = (y * w + x) * 3;
+      for (let k = 0; k < 3; k++) B[o + k] = (bg[a + k] * (1 - tx) + bg[b + k] * tx) * (1 - ty) + (bg[c + k] * (1 - tx) + bg[d + k] * tx) * ty;
+    }
+  }
+  return B;
+}
+function prepare(rgb, w, h, roi) {
   const D = new Uint8Array(w * h);
-  if (S.bgMode === 'capt' && bgFrame && bgFrame.w === w && bgFrame.h === h) {
-    const b = bgFrame.rgb;
+  let mode = S.bgMode, B = null;
+  if (mode === 'capt' && bgFrame && bgFrame.w === w && bgFrame.h === h) {
+    // compensa si la cámara cambió el brillo general desde que se capturó el fondo
+    const gain = [0, 0, 0], b = bgFrame.rgb;
+    for (let c = 0; c < 3; c++) {
+      const s1 = [], s2 = [];
+      for (let p = c; p < w * h * 3; p += 3 * 97) { s1.push(rgb[p]); s2.push(b[p]); }
+      s1.sort((x, y) => x - y); s2.sort((x, y) => x - y);
+      gain[c] = s2[s2.length >> 1] / Math.max(1, s1[s1.length >> 1]);
+    }
+    B = b;
     for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) {
       const p = y * w + x, i = p * 3;
-      D[p] = (Math.abs(rgb[i] - b[i]) + Math.abs(rgb[i + 1] - b[i + 1]) + Math.abs(rgb[i + 2] - b[i + 2])) / 3;
+      D[p] = Math.min(255, (Math.abs(rgb[i] * gain[0] - b[i]) + Math.abs(rgb[i + 1] * gain[1] - b[i + 1]) + Math.abs(rgb[i + 2] * gain[2] - b[i + 2])) / 3);
     }
-    return { D, mode: 'capt' };
+  } else if (mode === 'auto') {
+    const s = [];
+    const xa = Math.min(roi.x0 + 2, roi.x1 - 1), xb = Math.max(roi.x1 - 3, roi.x0), ya = Math.min(roi.y0 + 2, roi.y1 - 1), yb = Math.max(roi.y1 - 3, roi.y0);
+    for (let x = roi.x0; x < roi.x1; x += 4) s.push((ya * w + x) * 3, (yb * w + x) * 3);
+    for (let y = roi.y0; y < roi.y1; y += 4) s.push((y * w + xa) * 3, (y * w + xb) * 3);
+    const med = c => { const a = s.map(i => rgb[i + c]).sort((p, q) => p - q); return a[a.length >> 1]; };
+    const bg = [med(0), med(1), med(2)];
+    for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) {
+      const p = y * w + x, i = p * 3;
+      D[p] = (Math.abs(rgb[i] - bg[0]) + Math.abs(rgb[i + 1] - bg[1]) + Math.abs(rgb[i + 2] - bg[2])) / 3;
+    }
+  } else {
+    mode = 'local';
+    B = localBg(rgb, w, h);
+    for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) {
+      const p = y * w + x, i = p * 3;
+      D[p] = Math.min(255, (Math.abs(rgb[i] - B[i]) + Math.abs(rgb[i + 1] - B[i + 1]) + Math.abs(rgb[i + 2] - B[i + 2])) / 3);
+    }
   }
-  // Fondo = mediana del color en el borde de la zona de conteo
-  const s = [];
-  const xa = Math.min(roi.x0 + 2, roi.x1 - 1), xb = Math.max(roi.x1 - 3, roi.x0), ya = Math.min(roi.y0 + 2, roi.y1 - 1), yb = Math.max(roi.y1 - 3, roi.y0);
-  for (let x = roi.x0; x < roi.x1; x += 4) s.push((ya * w + x) * 3, (yb * w + x) * 3);
-  for (let y = roi.y0; y < roi.y1; y += 4) s.push((y * w + xa) * 3, (y * w + xb) * 3);
-  const med = c => { const a = s.map(i => rgb[i + c]).sort((p, q) => p - q); return a[a.length >> 1]; };
-  const bg = [med(0), med(1), med(2)];
-  for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) {
-    const p = y * w + x, i = p * 3;
-    D[p] = (Math.abs(rgb[i] - bg[0]) + Math.abs(rgb[i + 1] - bg[1]) + Math.abs(rgb[i + 2] - bg[2])) / 3;
+  if (S.edges) { // bordes: el metal brillante se parece al fondo, pero su contorno se marca
+    const L = new Float32Array(w * h);
+    for (let p = 0, i = 0; p < w * h; p++, i += 3) L[p] = 0.299 * rgb[i] + 0.587 * rgb[i + 1] + 0.114 * rgb[i + 2];
+    const y0 = Math.max(1, roi.y0), y1 = Math.min(h - 1, roi.y1), x0 = Math.max(1, roi.x0), x1 = Math.min(w - 1, roi.x1);
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const p = y * w + x;
+      const gx = (L[p - w + 1] + 2 * L[p + 1] + L[p + w + 1]) - (L[p - w - 1] + 2 * L[p - 1] + L[p + w - 1]);
+      const gy = (L[p + w - 1] + 2 * L[p + w] + L[p + w + 1]) - (L[p - w - 1] + 2 * L[p - w] + L[p - w + 1]);
+      const g = Math.min(255, Math.sqrt(gx * gx + gy * gy) / 4);
+      if (g > D[p]) D[p] = g;
+    }
   }
-  return { D, mode: 'auto' };
+  return { D, mode };
 }
+
+/* ---------- Segmentación ---------- */
 function otsu(D, w, roi) {
   const hist = new Float64Array(256); let n = 0;
   for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) { hist[D[y * w + x]]++; n++; }
@@ -363,7 +512,7 @@ function otsu(D, w, roi) {
   }
   return t;
 }
-function morph(mask, w, h, r, erode) { // erosión/dilatación cuadrada con imagen integral
+function morph(mask, w, h, r, erode) {
   if (r <= 0) return mask;
   const W1 = w + 1, I = new Uint32Array(W1 * (h + 1));
   for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += mask[y * w + x]; I[(y + 1) * W1 + x + 1] = I[y * W1 + x + 1] + row; } }
@@ -378,18 +527,36 @@ function morph(mask, w, h, r, erode) { // erosión/dilatación cuadrada con imag
   }
   return out;
 }
-function components(mask, w, h, minArea) {
+function fillHoles(mask, w, h, roi) { // todo hueco que no se conecta con el borde de la zona pasa a ser pieza
+  const out = new Uint8Array(w * h), q = new Int32Array(w * h); let top = 0;
+  const seed = p => { if (!mask[p] && !out[p]) { out[p] = 2; q[top++] = p; } };
+  for (let x = roi.x0; x < roi.x1; x++) { seed(roi.y0 * w + x); seed((roi.y1 - 1) * w + x); }
+  for (let y = roi.y0; y < roi.y1; y++) { seed(y * w + roi.x0); seed(y * w + roi.x1 - 1); }
+  while (top) {
+    const p = q[--top], x = p % w, y = (p / w) | 0;
+    if (x > roi.x0) seed(p - 1); if (x < roi.x1 - 1) seed(p + 1);
+    if (y > roi.y0) seed(p - w); if (y < roi.y1 - 1) seed(p + w);
+  }
+  const m = new Uint8Array(w * h);
+  for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) { const p = y * w + x; m[p] = out[p] === 2 ? 0 : 1; }
+  return m;
+}
+function segment(D, w, h, roi, thr, clean, fill) {
+  let mask = new Uint8Array(w * h);
+  for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) { const p = y * w + x; mask[p] = D[p] > thr ? 1 : 0; }
+  if (fill) { mask = morph(morph(mask, w, h, 2, false), w, h, 2, true); mask = fillHoles(mask, w, h, roi); }
+  if (clean > 0) mask = morph(morph(mask, w, h, clean, true), w, h, clean, false);
+  return mask;
+}
+function components(mask, w, h, minArea, roi) {
   const labels = new Int32Array(w * h), seen = new Uint8Array(w * h), pix = new Int32Array(w * h);
   const out = [];
   for (let s = 0; s < w * h; s++) {
     if (!mask[s] || seen[s]) continue;
     let top = 0, n = 0, sx = 0, sy = 0, minX = w, minY = h, maxX = 0, maxY = 0;
-    const start = 0;
     pix[top++] = s; seen[s] = 1;
-    // pila en pix[n..top): los ya procesados quedan en pix[0..n)
     while (n < top) {
-      const p = pix[n++];
-      const x = p % w, y = (p / w) | 0;
+      const p = pix[n++], x = p % w, y = (p / w) | 0;
       sx += x; sy += y;
       if (x < minX) minX = x; if (x > maxX) maxX = x;
       if (y < minY) minY = y; if (y > maxY) maxY = y;
@@ -400,13 +567,14 @@ function components(mask, w, h, minArea) {
     }
     if (n >= minArea) {
       const id = out.length + 1;
-      for (let i = start; i < n; i++) labels[pix[i]] = id;
-      out.push({ id, area: n, cx: sx / n, cy: sy / n, minX, minY, maxX, maxY });
+      for (let i = 0; i < n; i++) labels[pix[i]] = id;
+      const edge = minX <= roi.x0 + 1 || minY <= roi.y0 + 1 || maxX >= roi.x1 - 2 || maxY >= roi.y1 - 2;
+      out.push({ id, area: n, cx: sx / n, cy: sy / n, minX, minY, maxX, maxY, edge });
     }
   }
   return { comps: out, labels };
 }
-function distT(mask, w, h) { // distancia al fondo (chamfer 3-4, en tercios de píxel)
+function distT(mask, w, h) {
   const d = new Uint16Array(w * h);
   for (let p = 0; p < w * h; p++) d[p] = mask[p] ? 60000 : 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -452,27 +620,26 @@ function findPeaks(mask, labels, w, h, comps) {
     c.peaks = acc; delete c.cand;
   });
 }
+function thrFor(D, w, roi) {
+  const t = S.auto ? Math.max(10, otsu(D, w, roi)) * (130 - S.sens) / 60 : 90 - S.sens * 0.85;
+  return Math.max(3, Math.round(t));
+}
+function minAreaPx(w) { return Math.max(2, Math.round(S.minArea * (w / 640) * (w / 640))); }
 
-function analyze() {
-  const { rgb, w, h } = grabRGB();
+function analyzeFrame(g) {
+  const { rgb, w, h } = g;
   const roi = roiPx(w, h);
-  const { D, mode } = diffMap(rgb, w, h, roi);
-  let thr = S.auto ? Math.max(10, otsu(D, w, roi)) * (130 - S.sens) / 60 : 90 - S.sens * 0.85;
-  thr = Math.max(3, Math.round(thr));
-  let mask = new Uint8Array(w * h);
-  for (let y = roi.y0; y < roi.y1; y++) for (let x = roi.x0; x < roi.x1; x++) { const p = y * w + x; mask[p] = D[p] > thr ? 1 : 0; }
-  if (S.fill) mask = morph(morph(mask, w, h, 1, false), w, h, 1, true);           // cierre: tapa huecos y brillos
-  if (S.clean > 0) mask = morph(morph(mask, w, h, S.clean, true), w, h, S.clean, false); // apertura: quita ruido y puentes finos
-  const scale2 = (w / 640) * (w / 640);
-  const minA = Math.max(2, Math.round(S.minArea * scale2));
-  const { comps, labels } = components(mask, w, h, minA);
+  const { D, mode } = prepare(rgb, w, h, roi);
+  const thr = thrFor(D, w, roi);
+  const mask = segment(D, w, h, roi, thr, S.clean, S.fill);
+  const { comps, labels } = components(mask, w, h, minAreaPx(w), roi);
   if (S.split === 'forma') findPeaks(mask, labels, w, h, comps);
   const rf = refFrac(), refArea = rf ? rf * w * h : null;
   let total = 0, groups = 0, ignored = 0, small = 0;
   comps.forEach(c => {
     c.n = 1; c.kind = 'ok';
     const ratio = refArea ? c.area / refArea : null;
-    if (ratio !== null && S.ignoreSmall && ratio < 0.35) { c.n = 0; c.kind = 'ign'; ignored++; return; }
+    if ((S.ignoreBorder && c.edge) || (ratio !== null && S.ignoreSmall && ratio < 0.35)) { c.n = 0; c.kind = 'ign'; ignored++; return; }
     if (S.split === 'forma') c.n = Math.max(1, c.peaks.length);
     else if (ratio !== null && ratio > 1.5) c.n = Math.round(ratio);
     if (c.n > 1) { c.kind = 'grp'; groups++; }
@@ -530,38 +697,110 @@ function draw() {
 }
 
 /* ---------- Conteo ---------- */
-let frozen = false, calibrating = false, live = false, counted = false, pending = false;
-function countNow() {
+let frozen = false, calibrating = false, live = false, counted = false, pending = false, busy = false;
+let hist5 = [];
+function median(a) { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; }
+async function countNow(nFrames) {
   if (!video.videoWidth) { msg.textContent = 'Esperando la cámara...'; return; }
-  lastRes = analyze(); counted = true;
-  totalEl.textContent = lastRes.total;
+  if (busy) return;
+  busy = true;
+  try {
+    const g = await grabRGB(nFrames || 5);
+    lastRes = analyzeFrame(g); counted = true;
+  } finally { busy = false; }
+  const R = lastRes;
+  if (live && !frozen) {
+    hist5.push(R.total); if (hist5.length > 5) hist5.shift();
+    totalEl.textContent = median(hist5);
+    const steady = hist5.length >= 3 && hist5.every(v => v === hist5[0]);
+    $('stable').textContent = steady ? 'estable' : 'midiendo...';
+  } else {
+    totalEl.textContent = R.total; $('stable').textContent = '';
+  }
   draw(); showVals();
-  const R = lastRes, parts = [];
-  if (R.groups) parts.push(R.groups + ' grupo(s) pegados en naranja: el número es estimado, conviene separarlos');
-  if (R.small) parts.push(R.small + ' mancha(s) chicas en rojo para revisar');
-  if (R.ignored) parts.push(R.ignored + ' ignorada(s) por chicas');
+  const parts = [];
+  if (R.groups) parts.push(R.groups + ' grupo(s) pegados en naranja: número estimado');
+  if (R.small) parts.push(R.small + ' mancha(s) chicas en rojo');
+  if (R.ignored) parts.push(R.ignored + ' ignorada(s)');
   if (!refFrac() && S.split === 'area') parts.push('sin calibrar');
-  if (S.bgMode === 'capt' && R.mode !== 'capt') parts.push('falta capturar el fondo, uso el automático');
+  if (S.bgMode === 'capt' && R.mode !== 'capt') parts.push('falta capturar el fondo, uso el local');
   msg.textContent = parts.join(' · ');
 }
 function scheduleCount() {
   if (!counted || pending) return;
   pending = true;
-  requestAnimationFrame(() => { pending = false; countNow(); });
+  requestAnimationFrame(() => { pending = false; countNow(1); });
 }
-$('btnCount').onclick = countNow;
+$('btnCount').onclick = () => { hist5 = []; countNow(5); };
 $('btnFreeze').onclick = e => {
   frozen = !frozen;
-  if (frozen) { video.pause(); countNow(); } else { video.play(); }
+  if (frozen) { video.pause(); countNow(1); } else { video.play(); }
   e.target.textContent = frozen ? 'Seguir' : 'Congelar';
   e.target.classList.toggle('on', frozen);
 };
 $('btnLive').onclick = e => {
-  live = !live;
+  live = !live; hist5 = [];
   e.target.classList.toggle('on', live);
-  if (live) countNow();
+  if (live) countNow(2); else $('stable').textContent = '';
 };
-setInterval(() => { if (live && !frozen && !roiMode && !calibrating) countNow(); }, 600);
+setInterval(() => { if (live && !frozen && !roiMode && !calibrating && !tuning) countNow(2); }, 500);
+
+/* ---------- Ajuste automático con cantidad conocida ---------- */
+let tuning = false;
+$('btnTune').onclick = async () => {
+  const N = Math.round(+$('known').value);
+  if (!video.videoWidth) return;
+  if (!(N >= 1)) { msg.textContent = 'Escribí cuántas piezas hay.'; return; }
+  tuning = true; $('btnTune').disabled = true;
+  msg.textContent = 'Ajustando... no muevas la cámara ni las piezas.';
+  await sleep(30);
+  try {
+    const g = await grabRGB(6);
+    const { w, h } = g, roi = roiPx(w, h);
+    const minA = minAreaPx(w);
+    const results = [];
+    const prevEdges = S.edges;
+    for (const edges of [true, false]) {
+      S.edges = edges;
+      const { D } = prepare(g.rgb, w, h, roi);
+      for (let thr = 6; thr <= 90; thr += 3) {
+        for (let clean = 0; clean <= 2; clean++) {
+          const mask = segment(D, w, h, roi, thr, clean, S.fill);
+          const { comps } = components(mask, w, h, minA, roi);
+          const use = comps.filter(c => !(S.ignoreBorder && c.edge));
+          if (!use.length) continue;
+          const areas = use.map(c => c.area), m = areas.reduce((a, b) => a + b, 0) / areas.length;
+          const cv = Math.sqrt(areas.reduce((a, b) => a + (b - m) * (b - m), 0) / areas.length) / m;
+          results.push({ edges, thr, clean, n: use.length, cv, med: median(areas) });
+        }
+        await sleep(0);
+      }
+    }
+    S.edges = prevEdges;
+    const exact = results.filter(r => r.n === N);
+    let best;
+    if (exact.length) {
+      // de las que cuentan exacto, la más pareja; ante empate, la de umbral intermedio (más robusta)
+      exact.sort((a, b) => a.cv - b.cv);
+      const cut = exact[0].cv + 0.05;
+      const good = exact.filter(r => r.cv <= cut);
+      best = good[good.length >> 1];
+      good.sort((a, b) => a.thr - b.thr); best = good[good.length >> 1];
+    } else {
+      results.sort((a, b) => Math.abs(a.n - N) - Math.abs(b.n - N) || a.cv - b.cv);
+      best = results[0];
+    }
+    if (!best) { msg.textContent = 'No encontré piezas. Revisá la zona de conteo y que las piezas se vean bien.'; return; }
+    S.auto = false; S.edges = best.edges; S.clean = best.clean;
+    S.sens = Math.max(0, Math.min(100, Math.round((90 - best.thr) / 0.85)));
+    S.refSamples = [best.med / (w * h)];
+    saveS(); syncUI(); hist5 = [];
+    await countNow(5);
+    msg.textContent = exact.length
+      ? 'Listo: cuenta ' + N + ' con manchas parejas (variación ' + Math.round(best.cv * 100) + '%). Ya podés contar lotes.'
+      : 'No logré contar exactamente ' + N + '; lo más cercano fue ' + best.n + '. Mejorá el contraste (fondo oscuro mate) o marcá la zona de conteo y probá de nuevo.';
+  } finally { tuning = false; $('btnTune').disabled = false; }
+};
 
 /* ---------- Calibración y zona (toques sobre la imagen) ---------- */
 function setCal(on) {
@@ -573,13 +812,13 @@ function setCal(on) {
 $('btnCal').onclick = () => setCal(!calibrating);
 $('btnCalReset').onclick = () => { S.refSamples = []; saveS(); showVals(); msg.textContent = 'Calibración borrada.'; scheduleCount(); };
 $('btnDefaults').onclick = () => {
-  const keep = { roi: S.roi, refSamples: S.refSamples };
+  const keep = { roi: S.roi, refSamples: S.refSamples, known: S.known };
   S = Object.assign(JSON.parse(JSON.stringify(DEF)), keep);
   saveS(); syncUI(); scheduleCount();
 };
-
-function calibrateAt(fx, fy) {
-  const R = analyze();
+async function calibrateAt(fx, fy) {
+  const R = analyzeFrame(await grabRGB(3));
+  lastRes = R;
   const px = Math.min(R.w - 1, Math.floor(fx * R.w)), py = Math.min(R.h - 1, Math.floor(fy * R.h));
   let c = null;
   const L = R.labels[py * R.w + px];
@@ -592,13 +831,12 @@ function calibrateAt(fx, fy) {
     });
   }
   setCal(false);
-  if (!c) { msg.textContent = 'No encontré una pieza ahí. Tocá justo sobre ella o subí la sensibilidad (mirá "Ver máscara").'; return; }
+  if (!c) { msg.textContent = 'No encontré una pieza ahí. Probá "Ajustar solo" o activá "Ver máscara" para ver qué detecta.'; draw(); return; }
   S.refSamples = (S.refSamples || []).concat(c.area / (R.w * R.h)).slice(-7);
   saveS();
-  countNow();
-  msg.textContent = 'Muestra ' + S.refSamples.length + ' guardada (' + c.area + ' px). ' + (S.refSamples.length < 3 ? 'Sumá otra con Calibrar para mayor precisión.' : 'Calibración lista.');
+  await countNow(3);
+  msg.textContent = 'Muestra ' + S.refSamples.length + ' guardada (' + c.area + ' px). ' + (S.refSamples.length < 3 ? 'Sumá otra con Calibrar para más precisión.' : 'Calibración lista.');
 }
-
 function setRoiBtn() { $('btnRoi').textContent = roiMode ? 'Arrastrá sobre la imagen...' : 'Marcar zona'; $('btnRoi').classList.toggle('on', roiMode); }
 $('btnRoi').onclick = () => { roiMode = !roiMode; if (roiMode) setCal(false); setRoiBtn(); if (roiMode) msg.textContent = 'Arrastrá un rectángulo sobre la imagen.'; };
 $('btnRoiClear').onclick = () => { S.roi = null; saveS(); draw(); scheduleCount(); };
@@ -621,21 +859,19 @@ function endDrag() {
   const r = normRect(roiDrag); roiDrag = null; roiMode = false; setRoiBtn();
   if (r.x1 - r.x0 > 0.05 && r.y1 - r.y0 > 0.05) { S.roi = r; saveS(); msg.textContent = 'Zona de conteo marcada.'; }
   else msg.textContent = 'La zona es muy chica, probá de nuevo.';
-  draw(); scheduleCount();
+  hist5 = []; draw(); scheduleCount();
 }
 overlay.addEventListener('pointerup', endDrag);
 overlay.addEventListener('pointercancel', endDrag);
 
 /* ---------- Fondo vacío ---------- */
-$('btnBg').onclick = () => {
+$('btnBg').onclick = async () => {
   if (!video.videoWidth) return;
-  bgFrame = grabRGB();
-  S.bgMode = 'capt'; saveS(); syncUI();
+  bgFrame = await grabRGB(8);
+  S.bgMode = 'capt'; saveS(); syncUI(); hist5 = [];
   msg.textContent = 'Fondo capturado. Poné las piezas sin mover la cámara y tocá Contar.';
-  if (counted) countNow();
+  if (counted) countNow(3);
 };
-$('res').addEventListener('input', () => { if (bgFrame) { bgFrame = null; msg.textContent = 'Cambiaste la resolución: volvé a capturar el fondo vacío.'; } });
-$('blur').addEventListener('change', () => { if (bgFrame) { bgFrame = null; msg.textContent = 'Cambiaste el suavizado: volvé a capturar el fondo vacío.'; } });
 
 /* ---------- Historial por lote ---------- */
 const STORE_KEY = 'contadorPiezasHistorial';
@@ -690,7 +926,7 @@ function askDuplicate(lote, cantidad, previa) {
 }
 $('btnSave').onclick = () => {
   const lote = $('lote').value.trim();
-  const cant = lastRes ? lastRes.total : 0;
+  const cant = +totalEl.textContent || 0;
   if (!lote) { msg.textContent = 'Escribí el número de lote antes de guardar.'; return; }
   if (!cant) { msg.textContent = 'Todavía no hay un conteo. Tocá Contar primero.'; return; }
   const previo = registros.slice().reverse().find(r => r.lote.toLowerCase() === lote.toLowerCase());
